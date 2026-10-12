@@ -1,0 +1,171 @@
+{% extends 'analysis/base.html' %}
+{% load analysis_filters %}
+
+{% block title %}PDCA App - Experiments{% endblock %}
+{% block page_title %}Saved experiments{% endblock %}
+{% block page_subtitle %}{{ experiments|length }} experiment{{ experiments|length|pluralize }} saved{% endblock %}
+
+{% block content %}
+
+{% if not experiments %}
+    <div class="bg-hgf-panel border border-hgf-border rounded-lg p-8 text-center">
+        <div class="text-hgf-muted text-sm mb-2">No experiments saved yet.</div>
+        <a href="/compare/" class="text-hgf-blue text-sm underline">Run a comparison and save it →</a>
+    </div>
+{% else %}
+    <div class="bg-hgf-panel border border-hgf-border rounded-lg overflow-hidden">
+        <table class="w-full">
+            <thead>
+                <tr class="border-b border-hgf-border">
+                    <th class="text-left text-xs text-hgf-muted uppercase tracking-widest px-4 py-3">Name</th>
+                    <th class="text-left text-xs text-hgf-muted uppercase tracking-widest px-4 py-3">Saved</th>
+                    <th class="text-left text-xs text-hgf-muted uppercase tracking-widest px-4 py-3">Cleaning</th>
+                    <th class="text-left text-xs text-hgf-muted uppercase tracking-widest px-4 py-3">Verdict</th>
+                    <th class="text-left text-xs text-hgf-muted uppercase tracking-widest px-4 py-3"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exp in experiments %}
+                    <tr id="exp-row-{{ exp.id }}" class="border-b border-hgf-border hover:bg-hgf-darker transition last:border-0">
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-2" id="exp-name-{{ exp.id }}">
+                                <span class="text-sm text-white font-medium">{{ exp.name }}</span>
+                                {% if exp.comparison_type == 'tool' %}
+                                    <span class="text-xs px-1.5 py-0.5 rounded border border-hgf-border text-hgf-muted leading-none">Tool</span>
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-hgf-muted mt-0.5">
+                                {% if exp.comparison_type == 'tool' %}
+                                    {% if exp.selected_art_nr %}{{ exp.selected_art_nr.0 }}{% endif %} vs {{ exp.tool_b }} · {{ exp.period_1_start }} – {{ exp.period_1_end }}
+                                {% else %}
+                                    {{ exp.period_1_start }} – {{ exp.period_1_end }} vs {{ exp.period_2_start }} – {{ exp.period_2_end }}
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-4 py-3 text-xs text-hgf-muted">{{ exp.created_at|date:"Y-m-d H:i" }}</td>
+                        <td class="px-4 py-3 text-xs text-hgf-muted">{{ exp.cleaning_method|cleaning_label }}</td>
+                        <td class="px-4 py-3">
+                            {% if exp.verdict %}
+                                <span class="text-xs {% if 'improved' in exp.verdict %}text-hgf-green{% else %}text-red-400{% endif %}">
+                                    {{ exp.verdict }}
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <div class="flex items-center justify-end gap-3" id="exp-actions-{{ exp.id }}">
+                                <a href="/experiments/{{ exp.id }}/" class="text-xs text-hgf-muted hover:text-white transition">View →</a>
+                                <button data-id="{{ exp.id }}" data-name="{{ exp.name }}" onclick="startRename(this)"
+                                    class="text-hgf-muted hover:text-white transition">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <button data-id="{{ exp.id }}" data-name="{{ exp.name }}" onclick="startDelete(this)"
+                                    class="text-hgf-muted hover:text-red-400 transition">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                                        <polyline points="3 6 5 6 21 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+
+<form id="delete-form" method="post" style="display:none;">
+    {% csrf_token %}
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function startRename(btn) {
+    const id = btn.dataset.id;
+    const currentName = btn.dataset.name;
+    const nameEl = document.getElementById(`exp-name-${id}`);
+    const actionsEl = document.getElementById(`exp-actions-${id}`);
+    const row = document.getElementById(`exp-row-${id}`);
+    row.dataset.savedNameHtml = nameEl.innerHTML;
+    row.dataset.savedActionsHtml = actionsEl.innerHTML;
+
+    nameEl.innerHTML = '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentName;
+    input.id = `rename-input-${id}`;
+    input.className = 'bg-hgf-darker border border-hgf-blue text-white text-sm rounded-lg px-2 py-1 w-64 focus:outline-none';
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') confirmRename(id);
+        if (e.key === 'Escape') cancelEdit(id);
+    });
+    nameEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    actionsEl.innerHTML = `
+        <button onclick="confirmRename(${id})" class="text-xs text-white bg-hgf-blue px-3 py-1.5 rounded-lg hover:opacity-90 transition">Save</button>
+        <button onclick="cancelEdit(${id})" class="text-xs text-hgf-muted border border-hgf-border px-3 py-1.5 rounded-lg hover:border-hgf-blue transition">Cancel</button>
+    `;
+}
+
+function confirmRename(id) {
+    const input = document.getElementById(`rename-input-${id}`);
+    const newName = input ? input.value.trim() : '';
+    if (!newName) return;
+    fetch(`/experiments/${id}/rename/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': '{{ csrf_token }}' },
+        body: `name=${encodeURIComponent(newName)}`
+    }).then(() => {
+        const nameEl = document.getElementById(`exp-name-${id}`);
+        const row = document.getElementById(`exp-row-${id}`);
+        // Update the name span without losing the badge element
+        const nameSpan = nameEl.querySelector('span.font-medium');
+        if (nameSpan) {
+            nameSpan.textContent = newName;
+        } else {
+            nameEl.textContent = newName;
+        }
+        row.dataset.savedNameHtml = nameEl.innerHTML;
+        cancelEdit(id);
+        const btn = document.querySelector(`#exp-actions-${id} [data-id="${id}"][onclick^="startRename"]`);
+        if (btn) btn.dataset.name = newName;
+    });
+}
+
+function startDelete(btn) {
+    const id = btn.dataset.id;
+    const actionsEl = document.getElementById(`exp-actions-${id}`);
+    const row = document.getElementById(`exp-row-${id}`);
+    row.dataset.savedActionsHtml = actionsEl.innerHTML;
+
+    actionsEl.innerHTML = `
+        <span class="text-xs text-red-400">Delete?</span>
+        <button onclick="confirmDelete(${id})" class="text-xs text-red-400 border border-red-800 px-3 py-1.5 rounded-lg hover:bg-red-900 transition">Delete</button>
+        <button onclick="cancelEdit(${id})" class="text-xs text-hgf-muted border border-hgf-border px-3 py-1.5 rounded-lg hover:border-hgf-blue transition">Cancel</button>
+    `;
+}
+
+function confirmDelete(id) {
+    const form = document.getElementById('delete-form');
+    form.action = `/experiments/${id}/delete/`;
+    form.submit();
+}
+
+function cancelEdit(id) {
+    const row = document.getElementById(`exp-row-${id}`);
+    const nameEl = document.getElementById(`exp-name-${id}`);
+    const actionsEl = document.getElementById(`exp-actions-${id}`);
+    if (row.dataset.savedNameHtml !== undefined) nameEl.innerHTML = row.dataset.savedNameHtml;
+    if (row.dataset.savedActionsHtml !== undefined) actionsEl.innerHTML = row.dataset.savedActionsHtml;
+}
+</script>
+{% endblock %}

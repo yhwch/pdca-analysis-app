@@ -1,0 +1,220 @@
+{% extends 'analysis/base.html' %}
+
+{% block title %}PDCA App - Upload{% endblock %}
+{% block page_title %}Upload data{% endblock %}
+{% block page_subtitle %}XLSX · XLSM · CSV{% endblock %}
+{% block dataset_name %}{% if file_name %}{{ file_name }}{% else %}No data loaded{% endif %}{% endblock %}
+
+{% block content %}
+
+<form method="post" enctype="multipart/form-data" id="upload-form">
+    {% csrf_token %}
+
+    {% if not sheet_names and not success %}
+    <div id="drop-zone"
+         class="border-2 border-dashed border-hgf-border rounded-xl p-12 text-center bg-hgf-darker mb-6 cursor-pointer select-none transition-colors duration-150"
+         onclick="document.getElementById('file-input').click()">
+
+        <input type="file" name="data_file" accept=".csv,.xlsx,.xlsm" id="file-input" class="hidden">
+
+        <div id="state-idle">
+            <svg class="mx-auto mb-4" width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#4a6a85" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <div class="text-white text-sm font-medium mb-1">Drop a file here or click to browse</div>
+            <div class="text-hgf-muted text-xs">XLSX · XLSM · CSV</div>
+        </div>
+
+        <div id="state-dragging" class="hidden">
+            <svg class="mx-auto mb-4" width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#2e7ebb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <div class="text-hgf-blue text-sm font-medium">Drop to upload</div>
+        </div>
+
+        <div id="state-selected" class="hidden">
+            <svg class="mx-auto mb-4" width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#2e7ebb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <div id="selected-filename" class="text-white text-sm font-medium mb-2"></div>
+            <div class="flex items-center justify-center gap-2 text-hgf-muted text-xs">
+                <div class="spinner" style="width:13px;height:13px;border-width:2px;"></div>
+                Uploading…
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if sheet_names %}
+    <div class="bg-hgf-panel border border-hgf-border rounded-xl p-5 mb-6 card-enter">
+        <div class="text-xs text-hgf-muted uppercase tracking-widest mb-3">Select sheet</div>
+        <div class="flex flex-col gap-2">
+            {% for sheet in sheet_names %}
+            <label class="flex items-center justify-between p-3 bg-hgf-darker border border-hgf-border rounded-lg cursor-pointer hover:border-hgf-blue hover:bg-hgf-panel transition-colors group">
+                <input type="radio" name="sheet_name" value="{{ sheet }}" class="hidden">
+                <span class="text-sm text-white">{{ sheet }}</span>
+                <svg class="text-hgf-muted group-hover:text-hgf-blue transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                    <polyline points="12 5 19 12 12 19"/>
+                </svg>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</form>
+
+<!-- Loading overlay -->
+<div id="upload-overlay" class="hidden fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,0.55)">
+    <div class="bg-hgf-panel border border-hgf-border rounded-xl px-10 py-8 flex flex-col items-center gap-4 card-enter">
+        <div class="spinner" style="width:30px;height:30px;border-width:3px;"></div>
+        <div id="overlay-message" class="text-white text-sm"></div>
+    </div>
+</div>
+
+{% if error %}
+<div class="p-4 bg-red-950 border border-red-800 rounded-xl text-red-300 text-sm card-enter">
+    <span class="font-medium">Error:</span> {{ error }}
+</div>
+{% endif %}
+
+{% if success %}
+<div class="bg-hgf-panel border border-hgf-border rounded-xl p-5 card-enter">
+    <div class="flex items-center gap-2 mb-5">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4caf7d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span class="text-green-400 text-sm font-medium">{{ file_name }}</span>
+        {% if selected_sheet %}<span class="text-hgf-muted text-xs">· {{ selected_sheet }}</span>{% endif %}
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 mb-5">
+        <div class="bg-hgf-darker rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-wide mb-1">Rows</div>
+            <div class="text-2xl font-medium text-white">{{ rows }}</div>
+        </div>
+        <div class="bg-hgf-darker rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-wide mb-1">Columns</div>
+            <div class="text-2xl font-medium text-white">{{ columns }}</div>
+        </div>
+    </div>
+
+    {% if parsed_columns %}
+    <div class="mb-3">
+        <div class="text-xs text-hgf-muted mb-1">Datetime columns</div>
+        <div class="text-sm text-white">{{ parsed_columns|join:", " }}</div>
+    </div>
+    {% endif %}
+
+    {% if created_metrics %}
+    <div class="mb-5">
+        <div class="text-xs text-hgf-muted mb-1">Derived metrics</div>
+        <div class="text-sm text-white">{{ created_metrics|join:", " }}</div>
+    </div>
+    {% endif %}
+
+    <a href="/compare/" class="inline-flex items-center gap-2 bg-hgf-blue text-white text-sm px-5 py-2.5 rounded-lg hover:opacity-90 transition">
+        Continue to compare
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12 5 19 12 12 19"/>
+        </svg>
+    </a>
+</div>
+{% endif %}
+
+<script>
+(function () {
+    const fileInput  = document.getElementById('file-input');
+    const dropZone   = document.getElementById('drop-zone');
+    const overlay    = document.getElementById('upload-overlay');
+    const overlayMsg = document.getElementById('overlay-message');
+    const form       = document.getElementById('upload-form');
+
+    function setState(name) {
+        ['idle', 'dragging', 'selected'].forEach(s => {
+            const el = document.getElementById('state-' + s);
+            if (el) el.classList.toggle('hidden', s !== name);
+        });
+    }
+
+    function showOverlay(msg) {
+        overlayMsg.textContent = msg;
+        overlay.classList.remove('hidden');
+    }
+
+    function handleFile(file) {
+        document.getElementById('selected-filename').textContent = file.name;
+        setState('selected');
+        setTimeout(() => {
+            showOverlay('Reading ' + file.name + '…');
+            form.submit();
+        }, 320);
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) handleFile(fileInput.files[0]);
+        });
+    }
+
+    if (dropZone) {
+        ['dragenter', 'dragover'].forEach(evt => {
+            dropZone.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setState('dragging');
+                dropZone.classList.add('border-hgf-blue');
+                dropZone.classList.remove('border-hgf-border');
+            });
+        });
+
+        ['dragleave', 'dragend'].forEach(evt => {
+            dropZone.addEventListener(evt, (e) => {
+                e.preventDefault();
+                setState('idle');
+                dropZone.classList.remove('border-hgf-blue');
+                dropZone.classList.add('border-hgf-border');
+            });
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('border-hgf-blue');
+            dropZone.classList.add('border-hgf-border');
+            const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+            if (!file) { setState('idle'); return; }
+            try {
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+            } catch (_) {}
+            handleFile(file);
+        });
+    }
+
+    // Sheet cards: auto-submit on radio pick
+    document.querySelectorAll('input[name="sheet_name"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            showOverlay('Loading sheet…');
+            form.submit();
+        });
+    });
+
+    // Prevent browser from intercepting drops outside the zone
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop',     e => e.preventDefault());
+})();
+</script>
+
+{% endblock %}

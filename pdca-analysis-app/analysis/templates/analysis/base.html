@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PDCA App{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'hgf-dark': '#0d1117',
+                        'hgf-darker': '#0a0f16',
+                        'hgf-panel': '#0f1a26',
+                        'hgf-border': '#1e2a3a',
+                        'hgf-blue': '#2e7ebb',
+                        'hgf-green': '#4caf7d',
+                        'hgf-text': '#8ba8c0',
+                        'hgf-muted': '#4a7fa5',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+    .help-tooltip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        cursor: help;
+    }
+    .help-tooltip .help-icon {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #1e2a3a;
+        color: #8ba8c0;
+        font-size: 9px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        border: 1px solid #2a3a4a;
+    }
+    .help-tooltip:hover .help-icon {
+        background: #2e7ebb;
+        color: white;
+        border-color: #2e7ebb;
+    }
+    .help-tooltip .help-text {
+        visibility: hidden;
+        opacity: 0;
+        position: absolute;
+        bottom: 130%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #0a0f16;
+        border: 1px solid #1e2a3a;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 11px;
+        color: #8ba8c0;
+        white-space: normal;
+        width: 220px;
+        z-index: 100;
+        transition: opacity 0.15s, visibility 0.15s;
+        line-height: 1.4;
+        pointer-events: none;
+    }
+    .help-tooltip:hover .help-text {
+        visibility: visible;
+        opacity: 1;
+    }
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    @keyframes fadeSlideUp {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .spinner {
+        width: 22px; height: 22px;
+        border: 2px solid #1e2a3a;
+        border-top-color: #2e7ebb;
+        border-radius: 50%;
+        animation: spin 0.65s linear infinite;
+        display: inline-block;
+    }
+    .card-enter { animation: fadeSlideUp 0.28s ease both; }
+    .card-enter:nth-child(2) { animation-delay: 50ms; }
+    .card-enter:nth-child(3) { animation-delay: 100ms; }
+    .card-enter:nth-child(4) { animation-delay: 150ms; }
+    .card-enter:nth-child(5) { animation-delay: 200ms; }
+    </style>
+</head>
+<body class="bg-hgf-dark text-white min-h-screen flex">
+
+    <!-- Sidebar -->
+    <div class="w-52 bg-hgf-darker border-r border-hgf-border flex flex-col flex-shrink-0 min-h-screen">
+        <div class="p-5 border-b border-hgf-border">
+            <div class="text-xl font-medium tracking-widest">H|G|F</div>
+            <div class="text-xs text-hgf-muted tracking-widest uppercase mt-1">PDCA Analysis</div>
+        </div>
+
+        <nav class="flex-1 py-3">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest px-5 mb-2 mt-3">Main</div>
+
+            {% with request.path as path %}
+
+            <a href="/" class="flex items-center gap-3 px-5 py-2 text-sm border-l-2 transition-all
+                {% if path == '/' %}text-white bg-hgf-panel border-hgf-blue{% else %}text-hgf-text hover:text-white hover:bg-hgf-panel border-transparent hover:border-hgf-blue{% endif %}">
+                Dashboard
+            </a>
+            <a href="/upload/" class="flex items-center gap-3 px-5 py-2 text-sm border-l-2 transition-all
+                {% if path == '/upload/' %}text-white bg-hgf-panel border-hgf-blue{% else %}text-hgf-text hover:text-white hover:bg-hgf-panel border-transparent hover:border-hgf-blue{% endif %}">
+                Upload data
+            </a>
+            <a href="/compare/" class="flex items-center gap-3 px-5 py-2 text-sm border-l-2 transition-all
+                {% if path == '/compare/' %}text-white bg-hgf-panel border-hgf-blue{% else %}text-hgf-text hover:text-white hover:bg-hgf-panel border-transparent hover:border-hgf-blue{% endif %}">
+                Compare periods
+            </a>
+            <a href="/compare/tools/" class="flex items-center gap-3 px-5 py-2 text-sm border-l-2 transition-all
+                {% if path == '/compare/tools/' %}text-white bg-hgf-panel border-hgf-blue{% else %}text-hgf-text hover:text-white hover:bg-hgf-panel border-transparent hover:border-hgf-blue{% endif %}">
+                Compare tools
+            </a>
+
+            <div class="text-xs text-hgf-muted uppercase tracking-widest px-5 mb-2 mt-3">Experiments</div>
+
+            <a href="/experiments/" class="flex items-center gap-3 px-5 py-2 text-sm border-l-2 transition-all
+                {% if path == '/experiments/' or path|slice:':13' == '/experiments/' %}text-white bg-hgf-panel border-hgf-blue{% else %}text-hgf-text hover:text-white hover:bg-hgf-panel border-transparent hover:border-hgf-blue{% endif %}">
+                Saved experiments
+            </a>
+
+            {% endwith %}
+        </nav>
+
+        <div class="p-4 border-t border-hgf-border">
+            <div class="bg-hgf-panel border border-hgf-border rounded-lg p-3">
+                <div class="text-xs text-hgf-muted uppercase tracking-wide">Active dataset</div>
+                <div class="text-sm text-hgf-blue font-medium mt-1">
+                    {% block dataset_name %}No data loaded{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main content -->
+    <div class="flex-1 flex flex-col min-h-screen">
+        <div class="px-6 py-4 border-b border-hgf-border flex items-center justify-between">
+            <div>
+                <div class="text-base font-medium">{% block page_title %}{% endblock %}</div>
+                <div class="text-xs text-hgf-muted mt-0.5">{% block page_subtitle %}{% endblock %}</div>
+            </div>
+            <div>{% block topbar_actions %}{% endblock %}</div>
+        </div>
+
+        <div class="flex-1 p-6">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

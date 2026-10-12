@@ -1,0 +1,358 @@
+{% extends 'analysis/base.html' %}
+{% load analysis_filters %}
+
+{% block title %}PDCA App - {{ experiment.name }}{% endblock %}
+{% block page_title %}{{ experiment.name }}{% endblock %}
+{% block page_subtitle %}Saved {{ experiment.created_at|date:"Y-m-d H:i" }} · read only{% endblock %}
+
+{% block topbar_actions %}
+    <div class="flex items-center gap-3">
+        <a href="/experiments/" class="bg-hgf-panel border border-hgf-border text-hgf-text text-sm px-4 py-2 rounded-lg hover:border-hgf-blue transition">
+            ← All experiments
+        </a>
+        <a href="/experiments/{{ experiment.id }}/print/" target="_blank"
+            class="bg-hgf-panel border border-hgf-border text-hgf-text text-sm px-4 py-2 rounded-lg hover:border-hgf-blue transition flex items-center gap-2">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                <path d="M6 9V2h12v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <rect x="2" y="9" width="20" height="9" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M6 18v4h12v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <circle cx="18" cy="13.5" r="1" fill="currentColor"/>
+            </svg>
+            Print / PDF
+        </a>
+        <form method="post" action="/experiments/{{ experiment.id }}/delete/">
+            {% csrf_token %}
+            <button type="submit" onclick="return confirm('Delete this experiment?')"
+                class="bg-hgf-panel border border-red-900 text-red-400 text-sm px-4 py-2 rounded-lg hover:border-red-500 transition">
+                Delete
+            </button>
+        </form>
+    </div>
+{% endblock %}
+
+{% block content %}
+
+    {% comment %} Verdict {% endcomment %}
+    {% if experiment.verdict %}
+        <div class="{% if 'improved' in experiment.verdict %}bg-green-900 border-green-700 border-l-4 border-l-hgf-green{% else %}bg-red-900 border-red-700 border-l-4 border-l-red-500{% endif %} border rounded-lg p-4 mb-4 flex items-center justify-between">
+            <div>
+                <div class="text-xs {% if 'improved' in experiment.verdict %}text-green-400{% else %}text-red-400{% endif %} uppercase tracking-widest mb-1">Verdict</div>
+                <div class="text-sm font-medium {% if 'improved' in experiment.verdict %}text-green-300{% else %}text-red-300{% endif %}">
+                    {{ experiment.verdict }}
+                </div>
+            </div>
+            <span class="text-xs px-3 py-1.5 rounded-full {% if 'improved' in experiment.verdict %}bg-green-900 text-green-300 border border-green-700{% else %}bg-red-900 text-red-300 border border-red-700{% endif %}">
+                {% if 'improved' in experiment.verdict %}Improved{% else %}No improvement{% endif %}
+            </span>
+        </div>
+    {% endif %}
+
+    {% comment %} Period / Tool timeline {% endcomment %}
+    {% if experiment.comparison_type == 'tool' %}
+        <div class="grid grid-cols-2 gap-0 mb-4">
+            <div class="bg-hgf-panel border border-hgf-border rounded-l-lg p-4 border-r-0">
+                <div class="text-xs text-hgf-blue uppercase tracking-widest mb-2">Tool A</div>
+                <div class="text-base font-medium text-white">{{ experiment.selected_art_nr.0 }}</div>
+                <div class="text-xs text-hgf-muted mt-1">{{ p1_rows }} cycles</div>
+            </div>
+            <div class="bg-hgf-panel border border-hgf-border rounded-r-lg p-4">
+                <div class="text-xs text-hgf-green uppercase tracking-widest mb-2">Tool B</div>
+                <div class="text-base font-medium text-white">{{ experiment.tool_b }}</div>
+                <div class="text-xs text-hgf-muted mt-1">{{ p2_rows }} cycles</div>
+            </div>
+        </div>
+        <div class="text-xs text-hgf-muted mb-4">Period: {{ experiment.period_1_start|date:"M j" }} – {{ experiment.period_1_end|date:"M j, Y" }}</div>
+    {% else %}
+        <div class="grid grid-cols-2 gap-0 mb-4">
+            <div class="bg-hgf-panel border border-hgf-border rounded-l-lg p-4 border-r-0">
+                <div class="text-xs text-hgf-blue uppercase tracking-widest mb-2">Period A</div>
+                <div class="text-base font-medium text-white">{{ experiment.period_1_start|date:"M j" }} – {{ experiment.period_1_end|date:"M j, Y" }}</div>
+                <div class="text-xs text-hgf-muted mt-1">{{ p1_rows }} cycles</div>
+            </div>
+            <div class="bg-hgf-panel border border-hgf-border rounded-r-lg p-4">
+                <div class="text-xs text-hgf-green uppercase tracking-widest mb-2">Period B</div>
+                <div class="text-base font-medium text-white">{{ experiment.period_2_start|date:"M j" }} – {{ experiment.period_2_end|date:"M j, Y" }}</div>
+                <div class="text-xs text-hgf-muted mt-1">{{ p2_rows }} cycles</div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% comment %} Metric cards + Rope rip + Charts button {% endcomment %}
+    <div class="grid grid-cols-4 gap-3 mb-4">
+        {% for row in experiment.results %}
+            <div class="card-enter bg-hgf-panel border border-hgf-border rounded-lg">
+                <div class="p-4">
+                    <div class="flex items-center gap-1.5 text-xs text-hgf-muted uppercase tracking-widest mb-2">
+                        {{ row.metric }}
+                        {% with row.metric|metric_tooltip as tip %}{% if tip %}<span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">{{ tip }}</span></span>{% endif %}{% endwith %}
+                    </div>
+                    <div class="flex items-baseline gap-2 mb-2">
+                        <span class="text-base font-medium text-hgf-blue">{{ row.period_1_avg|floatformat:1 }}s</span>
+                        <span class="text-hgf-border text-xs">→</span>
+                        <span class="text-base font-medium {% if row.pct_change < 0 %}text-hgf-green{% else %}text-red-400{% endif %}">{{ row.period_2_avg|floatformat:1 }}s</span>
+                    </div>
+                    <div class="mt-2 flex items-center justify-between">
+                        <span class="text-xs font-medium {% if row.pct_change < 0 %}text-hgf-green{% else %}text-red-400{% endif %}">
+                            {% if row.pct_change < 0 %}↓{% else %}↑{% endif %}
+                            {{ row.pct_change|floatformat:1 }}%
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-full {% if row.pct_change < 0 %}bg-green-900 bg-opacity-50 text-hgf-green border border-green-800{% else %}bg-red-900 bg-opacity-50 text-red-400 border border-red-900{% endif %}">
+                            {% if row.pct_change < 0 %}Improved{% else %}Worsened{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="h-1 rounded-b-lg {% if row.pct_change < 0 %}bg-hgf-green{% else %}bg-red-500{% endif %}"></div>
+            </div>
+        {% endfor %}
+
+        {% if experiment.rope_rip %}
+            <div class="card-enter bg-hgf-panel border border-hgf-border rounded-lg">
+                <div class="p-4">
+                    <div class="flex items-center gap-1.5 text-xs text-hgf-muted uppercase tracking-widest mb-2">
+                        Rope rip rate
+                        <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Percentage of cycles where the rope feeding mechanism failed (Feeding_cnt = 1). Lower is better.</span></span>
+                    </div>
+                    <div class="flex items-baseline gap-2 mb-2">
+                        <span class="text-base font-medium text-red-400">{{ experiment.rope_rip.p1_rate }}%</span>
+                        <span class="text-hgf-border text-xs">→</span>
+                        <span class="text-base font-medium {% if experiment.rope_rip.improved %}text-hgf-green{% else %}text-red-400{% endif %}">{{ experiment.rope_rip.p2_rate }}%</span>
+                    </div>
+                    <div class="text-xs text-hgf-muted mb-2">{{ experiment.rope_rip.p1_cycles }} / {{ experiment.rope_rip.p2_cycles }} cycles</div>
+                    <div class="flex items-center justify-between">
+                        <span class="inline-flex items-center gap-1 text-xs font-medium {% if experiment.rope_rip.improved %}text-hgf-green{% else %}text-red-400{% endif %}">
+                            {% if experiment.rope_rip.improved %}↓{% else %}↑{% endif %}
+                            {{ experiment.rope_rip.change }}pp
+                            <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">pp = percentage points — absolute difference between two percentages. E.g. 10% → 7% is −3pp.</span></span>
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-full {% if experiment.rope_rip.improved %}bg-green-900 bg-opacity-50 text-hgf-green border border-green-800{% else %}bg-red-900 bg-opacity-50 text-red-400 border border-red-900{% endif %}">
+                            {% if experiment.rope_rip.improved %}Improved{% else %}Worsened{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="h-1 rounded-b-lg {% if experiment.rope_rip.improved %}bg-hgf-green{% else %}bg-red-500{% endif %}"></div>
+            </div>
+        {% endif %}
+
+        <div onclick="openChartModal()"
+            class="bg-hgf-panel border border-hgf-blue border-dashed rounded-lg p-4 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-hgf-darker transition">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <polyline points="3,18 8,10 13,14 18,6 21,9" stroke="#2e7ebb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="text-xs text-hgf-blue tracking-widest font-medium">CHARTS</div>
+        </div>
+    </div>
+
+    {% comment %} Notes {% endcomment %}
+    <form method="post" action="/experiments/{{ experiment.id }}/notes/" class="mb-4">
+        {% csrf_token %}
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="text-xs text-hgf-muted uppercase tracking-widest">Notes</div>
+                <div class="flex gap-2">
+                    <button type="button" id="edit-btn" onclick="enableNotes()"
+                        class="text-xs bg-hgf-panel border border-hgf-border text-hgf-text px-3 py-1.5 rounded-lg hover:border-hgf-blue transition">
+                        Edit
+                    </button>
+                    <button type="submit" id="save-btn" style="display:none;"
+                        class="text-xs bg-hgf-blue text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition">
+                        Save
+                    </button>
+                </div>
+            </div>
+            <textarea name="notes" id="notes-area" rows="4" readonly
+                placeholder="No notes added yet."
+                class="w-full bg-hgf-darker border border-hgf-border text-hgf-muted text-sm rounded-lg px-3 py-2 resize-none focus:outline-none transition">{{ experiment.notes }}</textarea>
+        </div>
+    </form>
+
+    {% comment %} Experiment details collapsible {% endcomment %}
+    <details class="bg-hgf-panel border border-hgf-border rounded-lg overflow-hidden mb-4">
+        <summary class="px-4 py-3 flex items-center justify-between cursor-pointer list-none hover:bg-hgf-darker transition">
+            <span class="text-xs text-hgf-muted uppercase tracking-widest">Experiment details</span>
+            <span class="text-hgf-muted text-xs">↓</span>
+        </summary>
+        <div class="px-4 pb-4 pt-2 flex flex-col gap-3 border-t border-hgf-border">
+            <div class="flex items-center gap-3">
+                <span class="text-xs text-hgf-muted w-32">Cleaning method</span>
+                <span class="text-xs bg-hgf-darker border border-hgf-border rounded-full px-3 py-1 text-hgf-text">{{ experiment.cleaning_method|cleaning_label }}</span>
+                {% if experiment.cycles_removed %}
+                <span class="text-xs text-amber-400">{{ experiment.cycles_removed }} cycles removed</span>
+                {% endif %}
+            </div>
+            {% if experiment.selected_art_nr %}
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-xs text-hgf-muted w-32">Tools (JevArtNr)</span>
+                    {% for art in experiment.selected_art_nr %}
+                        <span class="text-xs bg-hgf-darker border border-hgf-border rounded-full px-3 py-1 text-hgf-text">{{ art }}</span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% if experiment.selected_ao_nr %}
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-xs text-hgf-muted w-32">Orders (JevAoNr)</span>
+                    {% for ao in experiment.selected_ao_nr %}
+                        <span class="text-xs bg-hgf-darker border border-hgf-border rounded-full px-3 py-1 text-hgf-text">{{ ao }}</span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% if experiment.excluded_cycles %}
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-xs text-hgf-muted w-32">Excluded cycles</span>
+                    {% for cycle in experiment.excluded_cycles %}
+                        <span class="text-xs bg-hgf-darker border border-red-900 rounded-full px-3 py-1 text-red-400">{{ cycle }}</span>
+                    {% endfor %}
+                    {% if experiment.keep_rope_rip %}
+                        <span class="text-xs text-hgf-muted">(rope rip data kept)</span>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </details>
+
+    {% comment %} Chart modal {% endcomment %}
+    <div id="chart-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-hgf-darker bg-opacity-90" onclick="closeChartModal()"></div>
+        <div class="relative bg-hgf-panel border border-hgf-border rounded-xl p-6 w-full max-w-3xl mx-4 z-10">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <div class="text-sm font-medium text-white">Charts</div>
+                    <div class="text-xs text-hgf-muted mt-0.5">{{ experiment.name }}</div>
+                </div>
+                <button onclick="closeChartModal()" class="bg-hgf-darker border border-hgf-border text-hgf-muted rounded-lg w-7 h-7 flex items-center justify-center hover:text-white transition text-sm">✕</button>
+            </div>
+
+            <div class="flex gap-2 mb-4">
+                <button onclick="loadChart('bar', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="3" y="12" width="4" height="9" fill="currentColor" rx="1"/><rect x="10" y="7" width="4" height="14" fill="currentColor" rx="1"/><rect x="17" y="4" width="4" height="17" fill="currentColor" rx="1"/></svg>
+                    Bar
+                </button>
+                <button onclick="loadChart('scatter', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="18" r="2" fill="currentColor"/><circle cx="10" cy="12" r="2" fill="currentColor"/><circle cx="17" cy="7" r="2" fill="currentColor"/></svg>
+                    Scatter
+                </button>
+                <button onclick="loadChart('line', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><polyline points="3,18 8,10 13,14 18,6 21,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Line
+                </button>
+                <button onclick="loadChart('violin', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3 C9 6 8 9 8 12 C8 15 9 18 12 21" stroke="#2e7ebb" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                        <path d="M12 3 C15 6 16 9 16 12 C16 15 15 18 12 21" stroke="#4caf7d" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                    </svg>
+                    Violin
+                </button>
+                <button onclick="loadChart('control', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <line x1="2" y1="5" x2="22" y2="5" stroke="#e05c5c" stroke-width="1" stroke-dasharray="2,2"/>
+                        <polyline points="2,12 5,11 8,13 11,10 14,12 17,9 20,11 22,11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <line x1="2" y1="19" x2="22" y2="19" stroke="#e05c5c" stroke-width="1" stroke-dasharray="2,2"/>
+                    </svg>
+                    Control
+                </button>
+                <button onclick="loadChart('histogram', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <rect x="2" y="14" width="5" height="8" fill="currentColor"/>
+                        <rect x="7" y="7" width="5" height="15" fill="currentColor"/>
+                        <rect x="12" y="10" width="5" height="12" fill="currentColor"/>
+                        <rect x="17" y="17" width="5" height="5" fill="currentColor"/>
+                    </svg>
+                    Histogram
+                </button>
+            </div>
+
+            {% if experiment.selected_metrics|length > 1 %}
+            <div id="modal-metric-selector" class="flex items-center gap-2 mb-4" style="display:none;">
+                <span class="text-xs text-hgf-muted">Metric:</span>
+                {% for metric in experiment.selected_metrics %}
+                    <button onclick="selectModalMetric('{{ metric }}', this)"
+                        class="modal-metric-btn text-xs px-3 py-1.5 rounded-lg border transition
+                            {% if forloop.first %}border-hgf-blue text-hgf-blue bg-blue-900 bg-opacity-20{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue{% endif %}">
+                        {{ metric }}
+                    </button>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div id="modal-chart-container" class="min-h-64 flex items-center justify-center">
+                <div class="text-xs text-hgf-muted">Select a chart type above to load</div>
+            </div>
+        </div>
+    </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+<script>
+let currentModalType = 'bar';
+let currentModalMetric = '{{ experiment.selected_metrics.0 }}';
+
+function openChartModal() {
+    document.getElementById('chart-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    loadChart('bar', document.querySelector('.chart-type-btn'));
+}
+
+function closeChartModal() {
+    document.getElementById('chart-modal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeChartModal();
+});
+
+function loadChart(type, btn) {
+    currentModalType = type;
+
+    document.querySelectorAll('.chart-type-btn').forEach(b => {
+        b.classList.remove('border-hgf-blue', 'text-hgf-blue');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    if (btn) {
+        btn.classList.add('border-hgf-blue', 'text-hgf-blue');
+        btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    }
+
+    const metricSelector = document.getElementById('modal-metric-selector');
+    if (metricSelector) metricSelector.style.display = type === 'bar' ? 'none' : 'flex';
+
+    const container = document.getElementById('modal-chart-container');
+    container.innerHTML = '<div class="flex items-center justify-center p-10"><div class="spinner"></div></div>';
+
+    const metricParam = type !== 'bar' ? `&metric=${encodeURIComponent(currentModalMetric)}` : '';
+    fetch(`/experiments/{{ experiment.id }}/chart/?chart_type=${type}${metricParam}`)
+        .then(r => r.text())
+        .then(html => {
+            container.innerHTML = html;
+            container.querySelectorAll('script').forEach(oldScript => {
+                const newScript = document.createElement('script');
+                Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+                newScript.textContent = oldScript.textContent;
+                oldScript.replaceWith(newScript);
+            });
+        });
+}
+
+function selectModalMetric(metric, btn) {
+    currentModalMetric = metric;
+    document.querySelectorAll('.modal-metric-btn').forEach(b => {
+        b.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+    btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    loadChart(currentModalType, document.querySelector('.chart-type-btn.border-hgf-blue'));
+}
+
+function enableNotes() {
+    const area = document.getElementById('notes-area');
+    area.removeAttribute('readonly');
+    area.classList.remove('text-hgf-muted');
+    area.classList.add('text-white', 'focus:border-hgf-blue');
+    area.focus();
+    document.getElementById('edit-btn').style.display = 'none';
+    document.getElementById('save-btn').style.display = 'inline-block';
+}
+</script>
+{% endblock %}

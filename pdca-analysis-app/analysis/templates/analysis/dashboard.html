@@ -1,0 +1,129 @@
+{% extends 'analysis/base.html' %}
+{% block dataset_name %}{% if file_name %}{{ file_name }}{% else %}No data loaded{% endif %}{% endblock %}
+{% load analysis_filters %}
+
+{% block title %}PDCA App - Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Welcome — what would you like to do?{% endblock %}
+
+{% block content %}
+
+    {% if total_experiments > 0 %}
+    <div class="grid grid-cols-3 gap-3 mb-6">
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest mb-1">Total experiments</div>
+            <div class="text-2xl font-medium text-white">{{ total_experiments }}</div>
+        </div>
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest mb-1">Results</div>
+            <div class="flex items-baseline gap-3">
+                <span class="text-2xl font-medium text-hgf-green">{{ improved_count }} improved</span>
+                {% if worsened_count > 0 %}<span class="text-sm text-red-400">{{ worsened_count }} worsened</span>{% endif %}
+            </div>
+        </div>
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest mb-1">Active dataset</div>
+            <div class="text-sm font-medium {% if file_name %}text-hgf-blue{% else %}text-hgf-muted{% endif %} truncate mt-1">
+                {{ file_name|default:"None loaded" }}
+            </div>
+            {% if has_data %}
+                <a href="/compare/" class="text-xs text-hgf-blue mt-1.5 inline-block hover:underline">Go to compare →</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_data %}
+    <div class="grid grid-cols-3 gap-4 mb-8">
+
+        <a href="/compare/" class="bg-hgf-panel border border-hgf-blue rounded-lg p-5 hover:bg-hgf-darker transition block">
+            <div class="w-8 h-8 bg-hgf-darker rounded-lg flex items-center justify-center mb-3">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <rect x="1" y="9" width="4" height="6" fill="#2e7ebb" rx="0.5"/>
+                    <rect x="6" y="6" width="4" height="9" fill="#2e7ebb" opacity="0.6" rx="0.5"/>
+                    <rect x="11" y="3" width="4" height="12" fill="#2e7ebb" opacity="0.4" rx="0.5"/>
+                </svg>
+            </div>
+            <div class="text-sm font-medium text-white mb-1">Compare periods</div>
+            <div class="text-xs text-hgf-muted">Compare cycle metrics before and after a change.</div>
+        </a>
+
+        <a href="/compare/tools/" class="bg-hgf-panel border border-hgf-border rounded-lg p-5 hover:bg-hgf-darker hover:border-hgf-blue transition block">
+            <div class="w-8 h-8 bg-hgf-darker rounded-lg flex items-center justify-center mb-3">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="5" cy="8" r="3.5" stroke="#2e7ebb" stroke-width="1.5"/>
+                    <circle cx="11" cy="8" r="3.5" stroke="#4caf7d" stroke-width="1.5"/>
+                </svg>
+            </div>
+            <div class="text-sm font-medium text-white mb-1">Compare tools</div>
+            <div class="text-xs text-hgf-muted">Run two different tools head-to-head over the same period.</div>
+        </a>
+
+        <a href="/experiments/" class="bg-hgf-panel border border-hgf-border rounded-lg p-5 hover:bg-hgf-darker hover:border-hgf-blue transition block">
+            <div class="w-8 h-8 bg-hgf-darker rounded-lg flex items-center justify-center mb-3">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M2 4h12M2 8h8M2 12h5" stroke="#4caf7d" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div class="text-sm font-medium text-white mb-1">View experiments</div>
+            <div class="text-xs text-hgf-muted">Browse and revisit previously saved experiment results.</div>
+        </a>
+
+    </div>
+    {% else %}
+    <div class="grid grid-cols-2 gap-4 mb-8">
+
+        <a href="/upload/" class="bg-hgf-panel border border-hgf-blue rounded-lg p-5 hover:bg-hgf-darker transition block">
+            <div class="w-8 h-8 bg-hgf-darker rounded-lg flex items-center justify-center mb-3">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 1v9M4 6l4-4 4 4M1 13h14" stroke="#2e7ebb" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div class="text-sm font-medium text-white mb-1">Load data</div>
+            <div class="text-xs text-hgf-muted">Upload a production data file to get started.</div>
+        </a>
+
+        <a href="/experiments/" class="bg-hgf-panel border border-hgf-border rounded-lg p-5 hover:bg-hgf-darker hover:border-hgf-blue transition block">
+            <div class="w-8 h-8 bg-hgf-darker rounded-lg flex items-center justify-center mb-3">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M2 4h12M2 8h8M2 12h5" stroke="#4caf7d" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div class="text-sm font-medium text-white mb-1">View experiments</div>
+            <div class="text-xs text-hgf-muted">Browse and revisit previously saved experiment results.</div>
+        </a>
+
+    </div>
+    {% endif %}
+
+    {% if trend_chart %}
+        <div class="mb-2 text-xs text-hgf-muted uppercase tracking-widest">PDCA trend — % change per experiment</div>
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4 mb-6">
+            {{ trend_chart|safe }}
+        </div>
+    {% elif total_experiments > 0 %}
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4 mb-6 text-xs text-hgf-muted text-center">
+            Save at least 2 experiments with the same metric to see the improvement trend.
+        </div>
+    {% endif %}
+
+    {% if recent_experiments %}
+        <div class="mb-2 text-xs text-hgf-muted uppercase tracking-widest">Recent experiments</div>
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg overflow-hidden">
+            {% for exp in recent_experiments %}
+                <a href="/experiments/{{ exp.id }}/" class="flex items-center justify-between px-4 py-3 border-b border-hgf-border hover:bg-hgf-darker transition last:border-0">
+                    <div>
+                        <div class="text-sm text-white">{{ exp.name }}</div>
+                        <div class="text-xs text-hgf-muted mt-0.5">{{ exp.created_at|date:"Y-m-d" }} · {{ exp.cleaning_method|cleaning_label }}</div>
+                    </div>
+                    <span class="text-xs {% if 'improved' in exp.verdict %}text-hgf-green{% else %}text-red-400{% endif %}">
+                        {% if 'improved' in exp.verdict %}Improved{% else %}No improvement{% endif %}
+                    </span>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-xs text-hgf-muted">No experiments saved yet.</div>
+    {% endif %}
+
+{% endblock %}

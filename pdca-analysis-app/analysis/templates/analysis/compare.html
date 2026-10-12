@@ -1,0 +1,960 @@
+{% extends 'analysis/base.html' %}
+{% load analysis_filters %}
+
+{% block title %}PDCA App - Compare{% endblock %}
+{% block page_title %}Compare periods{% endblock %}
+{% block page_subtitle %}Select two periods to compare{% endblock %}
+{% block dataset_name %}{% if file_name %}{{ file_name }}{% else %}No data loaded{% endif %}{% endblock %}
+
+{% block topbar_actions %}
+    <a href="/upload/" class="bg-hgf-panel border border-hgf-border text-hgf-text text-sm px-4 py-2 rounded-lg hover:border-hgf-blue transition">
+        Upload new file
+    </a>
+{% endblock %}
+
+{% block content %}
+
+{% if no_data %}
+    <div class="p-4 bg-red-900 border border-red-700 rounded-lg text-red-200 text-sm">
+        No data loaded. <a href="/upload/" class="underline">Upload a file first.</a>
+    </div>
+{% else %}
+
+<div class="inline-flex gap-1 bg-hgf-darker border border-hgf-border p-1 rounded-lg mb-5">
+    <a href="/compare/" class="text-xs px-4 py-1.5 rounded-md bg-hgf-blue text-white font-medium">Compare periods</a>
+    <a href="/compare/tools/" class="text-xs px-4 py-1.5 rounded-md text-hgf-text hover:text-white hover:bg-hgf-panel transition">Compare tools</a>
+</div>
+
+<div id="compare-form-section" {% if comparison %}style="display:none;"{% endif %}>
+<form method="post" id="compare-form" onsubmit="handleRunSubmit(this)">
+    {% csrf_token %}
+    <input type="hidden" name="date_column" value="{{ parsed_columns.0 }}">
+    {% for metric in created_metrics %}
+        <input type="hidden" name="metrics" value="{{ metric }}">
+    {% endfor %}
+    <div id="art-nr-hidden"></div>
+    <div id="ao-nr-hidden"></div>
+    <input type="hidden" name="cleaning_method" id="cleaning_method_input" value="{{ cleaning_method|default:'per_product_top5' }}">
+    <input type="hidden" id="autofill-midpoint" value="">
+
+    <div class="flex items-start gap-3 mb-4 flex-wrap">
+        <div class="flex items-center gap-1.5 text-xs text-hgf-muted pt-1.5 shrink-0">
+            Cleaning
+            <span class="help-tooltip">
+                <span class="help-icon">?</span>
+                <span class="help-text">Removes extreme outlier cycles before computing averages. Set this first — it affects the date range stats, shift detection, and final comparison. Per tool top 5% is recommended for most cases.</span>
+            </span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            {% for val, label in cleaning_choices %}
+                {% with val|cleaning_tooltip as tip %}
+                <button type="button" data-value="{{ val }}" onclick="selectCleaning(this)"
+                    class="cleaning-chip inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition
+                        {% if cleaning_method == val %}border-hgf-blue text-hgf-blue bg-blue-900 bg-opacity-20{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue hover:text-white{% endif %}">
+                    {{ label }}
+                    {% if tip %}<span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">{{ tip }}</span></span>{% endif %}
+                </button>
+                {% endwith %}
+            {% endfor %}
+        </div>
+    </div>
+    <div id="custom-threshold-wrap" style="display:{% if cleaning_method == 'custom' %}block{% else %}none{% endif %};" class="mb-4">
+        <div class="flex flex-col gap-2">
+            {% for metric in created_metrics %}
+            <div class="flex items-center gap-3">
+                <label class="text-xs text-hgf-muted w-40 shrink-0">{{ metric }}</label>
+                <input type="number" id="custom_threshold_{{ metric }}" name="custom_threshold_{{ metric }}"
+                    data-metric-threshold="{{ metric }}"
+                    placeholder="no limit"
+                    value="{{ custom_thresholds_dict|get_item:metric }}"
+                    class="w-44 bg-hgf-darker border border-hgf-border text-white text-sm rounded-lg px-3 py-2">
+            </div>
+            {% endfor %}
+        </div>
+        <div class="text-xs text-hgf-muted mt-2">Cycles above these values (in seconds) will be excluded.</div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-4 mb-4">
+
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest mb-3">Tool</div>
+            <div class="flex flex-wrap gap-2">
+                {% for art in art_nr_options %}
+                    <button type="button" data-value="{{ art }}" data-group="art_nr" onclick="toggleChip(this)"
+                        class="chip-btn text-xs px-3 py-1.5 rounded-full border transition
+                            {% if art in selected_art_nr %}border-hgf-blue text-white bg-hgf-blue{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue hover:text-white{% endif %}">
+                        {{ art }}
+                    </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="text-xs text-hgf-muted uppercase tracking-widest" id="orders-label">Orders</div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="selectAllOrders()" class="text-xs text-hgf-blue hover:text-white transition">All</button>
+                    <button type="button" onclick="clearOrders()" class="text-xs text-hgf-muted hover:text-white transition">Clear</button>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-2 max-h-28 overflow-y-auto" id="ao-nr-chips">
+                {% for ao in ao_nr_options %}
+                    <button type="button" data-value="{{ ao }}" data-group="ao_nr" onclick="toggleChip(this)"
+                        class="chip-btn text-xs px-3 py-1.5 rounded-lg border transition
+                            {% if ao in selected_ao_nr %}border-hgf-blue text-hgf-blue bg-blue-900 bg-opacity-20{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue hover:text-white{% endif %}">
+                        {{ ao }}
+                    </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest mb-3">Available range</div>
+            <div class="text-xl font-medium text-white mb-1">
+                <span id="range-min">{{ available_min }}</span>
+                <span class="text-hgf-muted text-sm mx-1">to</span>
+                <span id="range-max">{{ available_max }}</span>
+            </div>
+            <div class="text-2xl font-medium text-hgf-blue mb-1" id="range-cycles-display">—</div>
+            <div class="text-xs text-hgf-muted mb-4">cycles available</div>
+
+            <div id="detected-shift-row" class="hidden flex items-center gap-2 mb-3 py-2 px-3 bg-hgf-darker rounded-lg border border-hgf-border">
+                <div class="w-1.5 h-1.5 rounded-full bg-hgf-blue flex-shrink-0"></div>
+                <span class="text-xs text-hgf-muted">Detected shift</span>
+                <span class="help-tooltip">
+                    <span class="help-icon">?</span>
+                    <span class="help-text">A statistical algorithm scanned the primary metric for the largest single shift point. It only appears when the mean shift exceeds one standard deviation of the pre-shift data — so the threshold adapts to how stable this tool's process actually is. Treat it as a starting suggestion and verify it makes sense before using it.</span>
+                </span>
+                <span id="detected-shift-date" class="text-xs text-white font-medium ml-auto"></span>
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <button type="button" onclick="autoFillDates()"
+                    class="w-full bg-hgf-darker border border-hgf-border text-hgf-muted text-xs rounded-lg px-3 py-2 hover:border-hgf-blue hover:text-white transition">
+                    Split by midpoint
+                </button>
+                <button type="button" id="split-detected-btn" onclick="autoSplitDetected()" disabled
+                    class="w-full bg-hgf-darker border border-hgf-border text-hgf-muted text-xs rounded-lg px-3 py-2 hover:bg-hgf-blue hover:text-white transition opacity-40 cursor-not-allowed">
+                    Split by detected shift
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 mb-4">
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="w-2 h-2 rounded-full bg-hgf-blue"></div>
+                <div class="text-xs text-hgf-muted uppercase tracking-widest">Period A</div>
+                <span id="p1-cycles" class="text-xs ml-auto" style="color:#4a7fa5;">Waiting...</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="date" id="period_1_start" name="period_1_start" value="{{ period_1_start }}"
+                    class="flex-1 bg-hgf-darker border border-hgf-border text-white text-sm rounded-lg px-3 py-2 [color-scheme:dark]">
+                <span class="text-hgf-muted text-xs">to</span>
+                <input type="date" id="period_1_end" name="period_1_end" value="{{ period_1_end }}"
+                    class="flex-1 bg-hgf-darker border border-hgf-border text-white text-sm rounded-lg px-3 py-2 [color-scheme:dark]">
+            </div>
+        </div>
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="w-2 h-2 rounded-full bg-hgf-green"></div>
+                <div class="text-xs text-hgf-muted uppercase tracking-widest">Period B</div>
+                <span id="p2-cycles" class="text-xs ml-auto" style="color:#4a7fa5;">Waiting...</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="date" id="period_2_start" name="period_2_start" value="{{ period_2_start }}"
+                    class="flex-1 bg-hgf-darker border border-hgf-border text-white text-sm rounded-lg px-3 py-2 [color-scheme:dark]">
+                <span class="text-hgf-muted text-xs">to</span>
+                <input type="date" id="period_2_end" name="period_2_end" value="{{ period_2_end }}"
+                    class="flex-1 bg-hgf-darker border border-hgf-border text-white text-sm rounded-lg px-3 py-2 [color-scheme:dark]">
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-hgf-darker border border-hgf-border rounded-lg px-4 py-3 flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4 flex-wrap text-xs">
+            <div class="flex items-center gap-2">
+                <span class="text-hgf-muted">Tool:</span>
+                <span class="text-white" id="summary-product">None selected</span>
+            </div>
+            <span class="text-hgf-border">|</span>
+            <div class="flex items-center gap-2">
+                <span class="text-hgf-muted">Orders:</span>
+                <span class="text-white" id="summary-orders">None selected</span>
+            </div>
+            <span class="text-hgf-border">|</span>
+            <div class="flex items-center gap-2">
+                <span class="text-hgf-muted">Cleaning:</span>
+                <span class="text-white" id="summary-cleaning">Per tool top 5%</span>
+            </div>
+        </div>
+        <button type="submit" class="bg-hgf-blue text-white text-sm px-6 py-2.5 rounded-lg hover:opacity-90 transition font-medium">
+            Run →
+        </button>
+    </div>
+
+</form>
+</div>
+
+{% if comparison %}
+<div id="collapsed-bar" class="bg-hgf-panel border border-hgf-border rounded-lg px-4 py-3 mb-4 flex items-center justify-between">
+    <div class="flex items-center gap-4 flex-wrap text-xs text-hgf-muted">
+        {% if selected_art_nr %}
+            <span class="text-white font-medium">{{ selected_art_nr|join:", " }}</span>
+            <span class="text-hgf-border">|</span>
+        {% endif %}
+        <span><span class="text-hgf-blue">A</span> {{ period_1_start }} – {{ period_1_end }} · <span id="bar-p1-rows">{{ p1_rows }}</span> cycles</span>
+        <span class="text-hgf-border">vs</span>
+        <span><span class="text-hgf-green">B</span> {{ period_2_start }} – {{ period_2_end }} · <span id="bar-p2-rows">{{ p2_rows }}</span> cycles</span>
+        <span class="text-hgf-border">|</span>
+        <span>{{ cleaning_method_key|cleaning_label }}</span>
+        {% if cycles_removed %}
+        <span class="text-hgf-border">|</span>
+        <span class="text-amber-400">{{ cycles_removed }} cycles removed</span>
+        {% endif %}
+    </div>
+    <div class="flex items-center gap-2">
+        {% if not saved %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="date_column" value="{{ date_column }}">
+                <input type="hidden" name="period_1_start" value="{{ period_1_start }}">
+                <input type="hidden" name="period_1_end" value="{{ period_1_end }}">
+                <input type="hidden" name="period_2_start" value="{{ period_2_start }}">
+                <input type="hidden" name="period_2_end" value="{{ period_2_end }}">
+                <input type="hidden" name="cleaning_method" value="{{ cleaning_method }}">
+                {% for metric, threshold in custom_thresholds_dict.items %}
+                <input type="hidden" name="custom_threshold_{{ metric }}" value="{{ threshold }}">
+                {% endfor %}
+                <input type="hidden" name="excluded_cycles" id="save-excluded-cycles" value="">
+                <input type="hidden" name="keep_rope_rip" id="save-keep-rope-rip" value="false">
+                {% for m in selected_metrics %}<input type="hidden" name="metrics" value="{{ m }}">{% endfor %}
+                {% for a in selected_art_nr %}<input type="hidden" name="art_nr" value="{{ a }}">{% endfor %}
+                {% for a in selected_ao_nr %}<input type="hidden" name="ao_nr" value="{{ a }}">{% endfor %}
+                <input type="hidden" name="save_experiment" value="1">
+                <button type="submit" class="text-xs border border-hgf-green text-hgf-green px-3 py-1.5 rounded-lg hover:bg-hgf-green hover:text-white transition">
+                    Save experiment
+                </button>
+            </form>
+        {% else %}
+            <span class="text-xs text-hgf-green">✓ Saved</span>
+        {% endif %}
+        <button onclick="showEditForm()"
+            class="text-xs bg-hgf-panel border border-hgf-border text-hgf-text px-3 py-1.5 rounded-lg hover:border-hgf-blue transition">
+            Edit ↑
+        </button>
+    </div>
+</div>
+{% endif %}
+
+{% if saved %}
+    <div class="bg-green-900 border border-green-700 rounded-lg p-3 mb-4 text-green-300 text-sm">
+        ✓ Experiment saved. <a href="/experiments/" class="underline">View all experiments →</a>
+    </div>
+{% endif %}
+
+{% if comparison %}
+    <div class="grid grid-cols-4 gap-3 mb-4" id="metric-cards-grid">
+        {% for row in comparison %}
+            <div class="card-enter bg-hgf-panel border border-hgf-border rounded-lg">
+                <div class="p-4">
+                    <div class="flex items-center gap-1.5 text-xs text-hgf-muted uppercase tracking-widest mb-2">
+                        {{ row.metric }}
+                        {% with row.metric|metric_tooltip as tip %}{% if tip %}<span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">{{ tip }}</span></span>{% endif %}{% endwith %}
+                    </div>
+                    <div class="flex items-baseline gap-2 mb-1">
+                        <span class="text-lg font-medium text-hgf-blue">{{ row.period_1_avg|floatformat:1 }}s</span>
+                        <span class="text-hgf-border text-xs">→</span>
+                        <span class="text-lg font-medium {% if row.pct_change < 0 %}text-hgf-green{% else %}text-red-400{% endif %}">{{ row.period_2_avg|floatformat:1 }}s</span>
+                    </div>
+                    <div class="text-xs text-hgf-muted">{{ row.period_1_avg_fmt }} → {{ row.period_2_avg_fmt }}</div>
+                    <div class="mt-3 flex items-center justify-between">
+                        <span class="text-xs font-medium {% if row.pct_change < 0 %}text-hgf-green{% else %}text-red-400{% endif %}">
+                            {% if row.pct_change < 0 %}↓{% else %}↑{% endif %}
+                            {{ row.pct_change|floatformat:1 }}%
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-full {% if row.pct_change < 0 %}bg-green-900 bg-opacity-50 text-hgf-green border border-green-800{% else %}bg-red-900 bg-opacity-50 text-red-400 border border-red-900{% endif %}">
+                            {% if row.pct_change < 0 %}Improved{% else %}Worsened{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="h-1 rounded-b-lg {% if row.pct_change < 0 %}bg-hgf-green{% else %}bg-red-500{% endif %}"></div>
+            </div>
+        {% endfor %}
+
+        {% if rope_rip %}
+            <div class="card-enter bg-hgf-panel border border-hgf-border rounded-lg">
+                <div class="p-4">
+                    <div class="flex items-center gap-1.5 text-xs text-hgf-muted uppercase tracking-widest mb-2">
+                        Rope rip rate
+                        <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Percentage of cycles where the rope feeding mechanism failed (Feeding_cnt = 1). Lower is better.</span></span>
+                    </div>
+                    <div class="flex items-baseline gap-2 mb-1">
+                        <span class="text-lg font-medium text-red-400">{{ rope_rip.p1_rate }}%</span>
+                        <span class="text-hgf-border text-xs">→</span>
+                        <span class="text-lg font-medium {% if rope_rip.improved %}text-hgf-green{% else %}text-red-400{% endif %}">{{ rope_rip.p2_rate }}%</span>
+                    </div>
+                    <div class="text-xs text-hgf-muted">{{ rope_rip.p1_cycles }} / {{ rope_rip.p2_cycles }} cycles</div>
+                    <div class="mt-3 flex items-center justify-between">
+                        <span class="inline-flex items-center gap-1 text-xs font-medium {% if rope_rip.improved %}text-hgf-green{% else %}text-red-400{% endif %}">
+                            {% if rope_rip.improved %}↓{% else %}↑{% endif %}
+                            {{ rope_rip.change }}pp
+                            <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">pp = percentage points — the absolute difference between two percentages. E.g. 10% → 7% is −3pp.</span></span>
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-full {% if rope_rip.improved %}bg-green-900 bg-opacity-50 text-hgf-green border border-green-800{% else %}bg-red-900 bg-opacity-50 text-red-400 border border-red-900{% endif %}">
+                            {% if rope_rip.improved %}Improved{% else %}Worsened{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="h-1 rounded-b-lg {% if rope_rip.improved %}bg-hgf-green{% else %}bg-red-500{% endif %}"></div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4 mb-4">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex gap-2">
+                <button onclick="selectChartType('bar', this)" class="chart-type-btn active-chart flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-blue text-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="3" y="12" width="4" height="9" fill="currentColor" rx="1"/><rect x="10" y="7" width="4" height="14" fill="currentColor" rx="1"/><rect x="17" y="4" width="4" height="17" fill="currentColor" rx="1"/></svg>
+                    Bar
+                </button>
+                <button onclick="selectChartType('scatter', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="18" r="2" fill="currentColor"/><circle cx="10" cy="12" r="2" fill="currentColor"/><circle cx="17" cy="7" r="2" fill="currentColor"/></svg>
+                    Scatter
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Individual cycles over time. Outliers (top 5%) are highlighted in red. A rolling mean line appears when variance is high.</span></span>
+                </button>
+                <button onclick="selectChartType('line', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><polyline points="3,18 8,10 13,14 18,6 21,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Line
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Rolling mean and regression slope per period. The slope (±x/cycle) shows whether the metric was trending up or down within the period.</span></span>
+                </button>
+                <button onclick="selectChartType('violin', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3 C9 6 8 9 8 12 C8 15 9 18 12 21" stroke="#2e7ebb" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                        <path d="M12 3 C15 6 16 9 16 12 C16 15 15 18 12 21" stroke="#4caf7d" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                    </svg>
+                    Violin
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Distribution shape per period — wider = more cycles at that value. Shows median, quartiles, and whether the spread changed between periods.</span></span>
+                </button>
+                <button onclick="selectChartType('control', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <line x1="2" y1="5" x2="22" y2="5" stroke="#e05c5c" stroke-width="1" stroke-dasharray="2,2"/>
+                        <polyline points="2,12 5,11 8,13 11,10 14,12 17,9 20,11 22,11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <line x1="2" y1="19" x2="22" y2="19" stroke="#e05c5c" stroke-width="1" stroke-dasharray="2,2"/>
+                    </svg>
+                    Control
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">SPC control chart — UCL/LCL limits are set from Period A (mean ± 3σ). Points marked × in Period B fall outside the old normal range.</span></span>
+                </button>
+                <button onclick="selectChartType('histogram', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <rect x="2" y="14" width="5" height="8" fill="currentColor"/>
+                        <rect x="7" y="7" width="5" height="15" fill="currentColor"/>
+                        <rect x="12" y="10" width="5" height="12" fill="currentColor"/>
+                        <rect x="17" y="17" width="5" height="5" fill="currentColor"/>
+                    </svg>
+                    Histogram
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Frequency distribution of cycle times — shows how many cycles fell at each value. Useful for spotting bimodal distributions or a full shift in the spread.</span></span>
+                </button>
+            </div>
+            <div id="metric-selector" class="flex gap-2" style="display:none;">
+                <span class="text-xs text-hgf-muted self-center">Metric:</span>
+                {% for metric in created_metrics %}
+                    <button onclick="selectMetric('{{ metric }}', this)" data-metric="{{ metric }}"
+                        class="metric-btn text-xs px-3 py-1.5 rounded-lg border transition
+                            {% if forloop.first %}border-hgf-blue text-hgf-blue bg-blue-900 bg-opacity-20{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue{% endif %}">
+                        {{ metric }}
+                    </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div id="exclusion-bar" class="mb-3 pb-3 border-b border-hgf-border" style="display:none;">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="text-xs text-hgf-muted flex items-center gap-1.5">
+                    Exclude cycles:
+                    <span class="help-tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="help-text">Type CycleCnt values to remove from the analysis, separated by commas. Useful when you know certain cycles were affected by maintenance or sensor errors.</span>
+                    </span>
+                </span>
+                <input type="text" id="excluded-cycles-input" placeholder="e.g. 7847, 8123"
+                    class="flex-1 bg-hgf-darker border border-hgf-border text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-hgf-blue transition">
+                <label class="flex items-center gap-1.5 text-xs text-hgf-muted cursor-pointer whitespace-nowrap">
+                    <input type="checkbox" id="keep-rope-rip" class="accent-hgf-blue">
+                    Keep rope rip data
+                    <span class="help-tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="help-text">When checked, excluded cycles still count toward the rope rip rate. Use when the cycle duration was bad but the rope rip reading was valid.</span>
+                    </span>
+                </label>
+                <button onclick="applyExclusions()"
+                    class="text-xs bg-hgf-blue text-white px-3 py-1.5 rounded-lg hover:opacity-90 transition whitespace-nowrap">
+                    Apply
+                </button>
+            </div>
+            <div id="excluded-chips" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <div id="compare-chart-container">
+            {{ chart_html|safe }}
+        </div>
+    </div>
+
+{% endif %}
+
+{% endif %}
+
+<!-- Floating order tooltip -->
+<div id="ao-tooltip" style="display:none;position:fixed;z-index:9999;pointer-events:none;"
+    class="bg-hgf-panel border border-hgf-border rounded-lg px-3 py-2.5 text-xs shadow-lg min-w-36">
+    <div id="ao-tooltip-order" class="text-hgf-muted mb-1.5"></div>
+    <div id="ao-tooltip-cycles" class="text-white font-medium mb-0.5"></div>
+    <div id="ao-tooltip-range" class="text-hgf-muted"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+<script>
+let currentChartType = 'bar';
+let currentMetric = '{{ created_metrics.0 }}';
+let excludedCyclesList = [];
+let detectedSplitDate = null;
+const AO_STATS = {{ ao_nr_stats_json|safe }};
+
+(function setupOrderTooltips() {
+    const tip      = document.getElementById('ao-tooltip');
+    const tipOrder = document.getElementById('ao-tooltip-order');
+    const tipCyc   = document.getElementById('ao-tooltip-cycles');
+    const tipRange = document.getElementById('ao-tooltip-range');
+    if (!tip) return;
+
+    function show(btn) {
+        const ao = btn.dataset.value;
+        const s  = AO_STATS[ao];
+        if (!s) return;
+        tipOrder.textContent = `Order ${ao}`;
+        tipCyc.textContent   = `${s.cycles.toLocaleString()} cycles`;
+        tipRange.textContent = s.from && s.to ? `${s.from} → ${s.to}` : '';
+        tip.style.display = 'block';
+        reposition(btn);
+    }
+
+    function reposition(btn) {
+        const r   = btn.getBoundingClientRect();
+        const tw  = tip.offsetWidth  || 160;
+        const th  = tip.offsetHeight || 70;
+        let left  = r.left;
+        let top   = r.top - th - 8;
+        if (top < 8) top = r.bottom + 8;
+        if (left + tw > window.innerWidth - 8) left = window.innerWidth - tw - 8;
+        tip.style.left = left + 'px';
+        tip.style.top  = top  + 'px';
+    }
+
+    function hide() { tip.style.display = 'none'; }
+
+    function attach() {
+        document.querySelectorAll('[data-group="ao_nr"]').forEach(btn => {
+            btn.addEventListener('mouseenter', () => show(btn));
+            btn.addEventListener('mouseleave', hide);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', attach);
+})();
+
+function toggleChip(btn) {
+    const group = btn.dataset.group;
+    if (group === 'art_nr') {
+        document.querySelectorAll('[data-group="art_nr"]').forEach(b => {
+            b.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20', 'text-white', 'bg-hgf-blue');
+            b.classList.add('border-hgf-border', 'text-hgf-text');
+        });
+        const wasActive = btn.classList.contains('border-hgf-border');
+        if (wasActive) {
+            btn.classList.add('border-hgf-blue', 'text-white', 'bg-hgf-blue');
+            btn.classList.remove('border-hgf-border', 'text-hgf-text');
+        }
+        updateHiddenInputs('art_nr');
+        fetchOrdersForProduct();
+        fetchDateRange();
+        updateSummaryBar();
+    } else {
+        const isActive = btn.classList.contains('border-hgf-blue');
+        if (isActive) {
+            btn.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+            btn.classList.add('border-hgf-border', 'text-hgf-text');
+        } else {
+            btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+            btn.classList.remove('border-hgf-border', 'text-hgf-text');
+        }
+        updateHiddenInputs('ao_nr');
+        fetchDateRange();
+        updateSummaryBar();
+    }
+}
+
+function fetchOrdersForProduct() {
+    const selected = getSelectedChips('art_nr');
+    const container = document.getElementById('ao-nr-chips');
+    if (selected.length === 0) {
+        container.querySelectorAll('.chip-btn').forEach(btn => { btn.style.display = 'inline-flex'; });
+        document.getElementById('orders-label').textContent = 'Orders';
+        return;
+    }
+    const params = new URLSearchParams();
+    selected.forEach(v => params.append('art_nr', v));
+    fetch(`/api/orders-for-product/?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+            container.querySelectorAll('.chip-btn').forEach(btn => {
+                btn.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+                btn.classList.add('border-hgf-border', 'text-hgf-text');
+                btn.style.display = data.orders.includes(btn.dataset.value) ? 'inline-flex' : 'none';
+            });
+            document.getElementById('orders-label').textContent = `Orders for ${selected[0]}`;
+            updateHiddenInputs('ao_nr');
+            fetchDateRange();
+            updateSummaryBar();
+        });
+}
+
+function updateHiddenInputs(group) {
+    const containerId = group === 'art_nr' ? 'art-nr-hidden' : 'ao-nr-hidden';
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    document.querySelectorAll(`[data-group="${group}"].border-hgf-blue`).forEach(btn => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = group;
+        input.value = btn.dataset.value;
+        container.appendChild(input);
+    });
+}
+
+function selectCleaning(btn) {
+    document.querySelectorAll('.cleaning-chip').forEach(c => {
+        c.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        c.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+    btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    document.getElementById('cleaning_method_input').value = btn.dataset.value;
+    document.getElementById('custom-threshold-wrap').style.display = btn.dataset.value === 'custom' ? 'block' : 'none';
+    updateSummaryBar();
+    fetchDateRange();
+}
+
+
+function getSelectedChips(group) {
+    return Array.from(document.querySelectorAll(`[data-group="${group}"].border-hgf-blue`)).map(b => b.dataset.value);
+}
+
+function fetchDateRange() {
+    const artNr = getSelectedChips('art_nr');
+    const aoNr = getSelectedChips('ao_nr');
+    const p1Start = document.getElementById('period_1_start') ? document.getElementById('period_1_start').value : '';
+    const p1End = document.getElementById('period_1_end') ? document.getElementById('period_1_end').value : '';
+    const p2Start = document.getElementById('period_2_start') ? document.getElementById('period_2_start').value : '';
+    const p2End = document.getElementById('period_2_end') ? document.getElementById('period_2_end').value : '';
+    const params = new URLSearchParams();
+    artNr.forEach(v => params.append('art_nr', v));
+    aoNr.forEach(v => params.append('ao_nr', v));
+    if (p1Start) params.append('p1_start', p1Start);
+    if (p1End) params.append('p1_end', p1End);
+    if (p2Start) params.append('p2_start', p2Start);
+    if (p2End) params.append('p2_end', p2End);
+    params.append('cleaning_method', getCleaningParam());
+    fetch(`/api/date-range/?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+            const rangeMin = document.getElementById('range-min');
+            const rangeMax = document.getElementById('range-max');
+            const rangeCycles = document.getElementById('range-cycles-display');
+            const midpoint = document.getElementById('autofill-midpoint');
+            if (rangeMin && data.available_min) rangeMin.textContent = data.available_min;
+            if (rangeMax && data.available_max) rangeMax.textContent = data.available_max;
+            if (rangeCycles) rangeCycles.textContent = data.total_cycles ? data.total_cycles.toLocaleString() : '—';
+            if (midpoint) midpoint.value = data.midpoint || '';
+
+            detectedSplitDate = data.detected_split || null;
+            const shiftRow = document.getElementById('detected-shift-row');
+            const shiftDateEl = document.getElementById('detected-shift-date');
+            const splitBtn = document.getElementById('split-detected-btn');
+            if (detectedSplitDate) {
+                shiftDateEl.textContent = detectedSplitDate;
+                shiftRow.classList.remove('hidden');
+                splitBtn.disabled = false;
+                splitBtn.classList.remove('opacity-40', 'cursor-not-allowed', 'border-hgf-border', 'text-hgf-muted');
+                splitBtn.classList.add('border-hgf-blue', 'text-hgf-blue');
+            } else {
+                shiftRow.classList.add('hidden');
+                splitBtn.disabled = true;
+                splitBtn.classList.add('opacity-40', 'cursor-not-allowed', 'border-hgf-border', 'text-hgf-muted');
+                splitBtn.classList.remove('border-hgf-blue', 'text-hgf-blue');
+            }
+
+            const p1El = document.getElementById('p1-cycles');
+            const p2El = document.getElementById('p2-cycles');
+            if (p1El) {
+                if (data.p1_cycles !== null && data.p1_cycles !== undefined) {
+                    p1El.textContent = `● ${data.p1_cycles.toLocaleString()} cycles`;
+                    p1El.style.color = '#2e7ebb';
+                } else {
+                    p1El.textContent = 'Waiting for dates...';
+                    p1El.style.color = '#4a7fa5';
+                }
+            }
+            if (p2El) {
+                if (data.p2_cycles !== null && data.p2_cycles !== undefined) {
+                    p2El.textContent = `● ${data.p2_cycles.toLocaleString()} cycles`;
+                    p2El.style.color = '#4caf7d';
+                } else {
+                    p2El.textContent = 'Waiting for dates...';
+                    p2El.style.color = '#4a7fa5';
+                }
+            }
+        });
+}
+
+function autoFillDates() {
+    const min = document.getElementById('range-min').textContent.trim();
+    const max = document.getElementById('range-max').textContent.trim();
+    const mid = document.getElementById('autofill-midpoint').value;
+    if (!min || !max || !mid) return;
+    document.getElementById('period_1_start').value = min;
+    document.getElementById('period_1_end').value = mid;
+    document.getElementById('period_2_start').value = mid;
+    document.getElementById('period_2_end').value = max;
+    fetchDateRange();
+}
+
+function autoSplitDetected() {
+    if (!detectedSplitDate) return;
+    const min = document.getElementById('range-min').textContent.trim();
+    const max = document.getElementById('range-max').textContent.trim();
+    if (!min || !max) return;
+    document.getElementById('period_1_start').value = min;
+    document.getElementById('period_1_end').value = detectedSplitDate;
+    document.getElementById('period_2_start').value = detectedSplitDate;
+    document.getElementById('period_2_end').value = max;
+    fetchDateRange();
+}
+
+function setupDateListeners() {
+    ['period_1_start', 'period_1_end', 'period_2_start', 'period_2_end'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', fetchDateRange);
+    });
+}
+
+function selectChartType(type, btn) {
+    currentChartType = type;
+    document.querySelectorAll('.chart-type-btn').forEach(b => {
+        b.classList.remove('border-hgf-blue', 'text-hgf-blue');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    btn.classList.add('border-hgf-blue', 'text-hgf-blue');
+    btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    const metricSelector = document.getElementById('metric-selector');
+    const exclusionBar = document.getElementById('exclusion-bar');
+    if (metricSelector) metricSelector.style.display = type === 'bar' ? 'none' : 'flex';
+    if (exclusionBar) exclusionBar.style.display = (type === 'scatter' || type === 'control') ? 'block' : 'none';
+    loadChart();
+}
+
+function selectMetric(metric, btn) {
+    currentMetric = metric;
+    document.querySelectorAll('.metric-btn').forEach(b => {
+        b.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+    btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    loadChart();
+}
+
+function getCleaningParam() {
+    const input = document.getElementById('cleaning_method_input');
+    let val = input ? input.value : '{{ cleaning_method }}';
+    if (val === 'custom') {
+        const parts = [];
+        document.querySelectorAll('[data-metric-threshold]').forEach(el => {
+            const t = el.value.trim();
+            if (t) parts.push(`${el.dataset.metricThreshold}:${t}`);
+        });
+        val = parts.length ? `custom_${parts.join(',')}` : 'none';
+    }
+    return val;
+}
+
+function buildBaseParams() {
+    const params = new URLSearchParams();
+    params.append('period_1_start', '{{ period_1_start }}');
+    params.append('period_1_end', '{{ period_1_end }}');
+    params.append('period_2_start', '{{ period_2_start }}');
+    params.append('period_2_end', '{{ period_2_end }}');
+    params.append('cleaning_method', getCleaningParam());
+    {% for a in selected_art_nr %}params.append('art_nr', '{{ a }}');
+    {% endfor %}
+    {% for a in selected_ao_nr %}params.append('ao_nr', '{{ a }}');
+    {% endfor %}
+    {% for m in selected_metrics %}params.append('metrics', '{{ m }}');
+    {% endfor %}
+    return params.toString();
+}
+
+function loadChart() {
+    const container = document.getElementById('compare-chart-container');
+    if (!container) return;
+    container.innerHTML = '<div class="flex items-center justify-center p-10"><div class="spinner"></div></div>';
+    const excluded = excludedCyclesList.join(',');
+    const url = `/compare/chart/?chart_type=${currentChartType}&metric=${currentMetric}&excluded_cycles=${encodeURIComponent(excluded)}&${buildBaseParams()}`;
+    fetch(url)
+        .then(r => r.text())
+        .then(html => {
+            container.innerHTML = html;
+            container.querySelectorAll('script').forEach(oldScript => {
+                const newScript = document.createElement('script');
+                Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+                newScript.textContent = oldScript.textContent;
+                oldScript.replaceWith(newScript);
+            });
+        });
+}
+
+
+function applyExclusions() {
+    const input = document.getElementById('excluded-cycles-input');
+    const newCycles = input.value.split(',').map(s => s.trim()).filter(s => s).map(Number).filter(n => !isNaN(n) && n > 0);
+    if (newCycles.length === 0) {
+        input.placeholder = 'Enter valid CycleCnt numbers';
+        return;
+    }
+    newCycles.forEach(c => { if (!excludedCyclesList.includes(c)) excludedCyclesList.push(c); });
+    input.value = '';
+    input.placeholder = 'e.g. 7847, 8123';
+    renderExcludedChips();
+    recalculate();
+}
+
+
+function renderExcludedChips() {
+    const container = document.getElementById('excluded-chips');
+    if (!container) return;
+    container.innerHTML = '';
+    excludedCyclesList.forEach(cycle => {
+        const chip = document.createElement('span');
+        chip.className = 'inline-flex items-center gap-1 text-xs bg-red-900 bg-opacity-30 text-red-300 border border-red-800 rounded-full px-3 py-1';
+        chip.innerHTML = `${cycle} <button onclick="removeExclusion(${cycle})" class="hover:text-white text-base leading-none ml-1">×</button>`;
+        container.appendChild(chip);
+    });
+}
+
+function removeExclusion(cycle) {
+    excludedCyclesList = excludedCyclesList.filter(c => c !== cycle);
+    renderExcludedChips();
+    recalculate();
+}
+
+function recalculate() {
+    const excluded = excludedCyclesList.join(',');
+    const keepRopeRip = document.getElementById('keep-rope-rip') ? document.getElementById('keep-rope-rip').checked : false;
+    const url = `/compare/recalculate/?excluded_cycles=${encodeURIComponent(excluded)}&keep_rope_rip=${keepRopeRip}&${buildBaseParams()}`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            updateMetricCards(data.comparison, data.rope_rip);
+            updateRopeRipBanner(data.rope_rip);
+            const p1El = document.getElementById('bar-p1-rows');
+            const p2El = document.getElementById('bar-p2-rows');
+            if (p1El) p1El.textContent = data.p1_rows;
+            if (p2El) p2El.textContent = data.p2_rows;
+
+            // Remove invalid cycles and warn user
+            if (data.invalid_excluded && data.invalid_excluded.length > 0) {
+                data.invalid_excluded.forEach(c => {
+                    excludedCyclesList = excludedCyclesList.filter(x => x !== c);
+                });
+                renderExcludedChips();
+                const chipsContainer = document.getElementById('excluded-chips');
+                const warning = document.createElement('span');
+                warning.className = 'text-xs text-red-400';
+                warning.textContent = `CycleCnt not found: ${data.invalid_excluded.join(', ')}`;
+                chipsContainer.appendChild(warning);
+            }
+
+            const saveExcluded = document.getElementById('save-excluded-cycles');
+            const saveKeep = document.getElementById('save-keep-rope-rip');
+            if (saveExcluded) saveExcluded.value = excludedCyclesList.join(',');
+            if (saveKeep) saveKeep.value = keepRopeRip;
+        });
+    loadChart();
+}
+
+function updateMetricCards(comparison, ropeRip) {
+    const grid = document.getElementById('metric-cards-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    comparison.forEach((row, index) => {
+        const isImproved = row.pct_change < 0;
+        const card = document.createElement('div');
+        card.className = 'card-enter bg-hgf-panel border border-hgf-border rounded-lg';
+        card.style.animationDelay = `${index * 50}ms`;
+        card.innerHTML = `
+            <div class="p-4">
+                <div class="text-xs text-hgf-muted uppercase tracking-widest mb-2">${row.metric}</div>
+                <div class="flex items-baseline gap-2 mb-1">
+                    <span class="text-lg font-medium text-hgf-blue">${row.period_1_avg.toFixed(1)}s</span>
+                    <span style="color:#1e2a3a;" class="text-xs">→</span>
+                    <span class="text-lg font-medium ${isImproved ? 'text-hgf-green' : 'text-red-400'}">${row.period_2_avg.toFixed(1)}s</span>
+                </div>
+                <div class="text-xs text-hgf-muted">${row.period_1_avg_fmt} → ${row.period_2_avg_fmt}</div>
+                <div class="mt-3 flex items-center justify-between">
+                    <span class="text-xs font-medium ${isImproved ? 'text-hgf-green' : 'text-red-400'}">
+                        ${isImproved ? '↓' : '↑'} ${row.pct_change.toFixed(1)}%
+                    </span>
+                    <span class="text-xs px-2 py-0.5 rounded-full ${isImproved ? 'bg-green-900 text-hgf-green border border-green-800' : 'bg-red-900 text-red-400 border border-red-900'}">
+                        ${isImproved ? 'Improved' : 'Worsened'}
+                    </span>
+                </div>
+            </div>
+            <div class="h-1 rounded-b-lg ${isImproved ? 'bg-hgf-green' : 'bg-red-500'}"></div>
+        `;
+        grid.appendChild(card);
+    });
+
+    // Add rope rip card if available
+    if (ropeRip) {
+        const improved = ropeRip.improved;
+        const card = document.createElement('div');
+        card.className = 'card-enter bg-hgf-panel border border-hgf-border rounded-lg';
+        card.style.animationDelay = `${comparison.length * 50}ms`;
+        card.innerHTML = `
+            <div class="p-4">
+                <div class="flex items-center gap-1.5 text-xs text-hgf-muted uppercase tracking-widest mb-2">
+                    Rope rip rate
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Percentage of cycles where the rope feeding mechanism failed (Feeding_cnt = 1). Lower is better.</span></span>
+                </div>
+                <div class="flex items-baseline gap-2 mb-1">
+                    <span class="text-lg font-medium text-red-400">${ropeRip.p1_rate}%</span>
+                    <span style="color:#1e2a3a;" class="text-xs">→</span>
+                    <span class="text-lg font-medium ${improved ? 'text-hgf-green' : 'text-red-400'}">${ropeRip.p2_rate}%</span>
+                </div>
+                <div class="text-xs text-hgf-muted">${ropeRip.p1_cycles} / ${ropeRip.p2_cycles} cycles</div>
+                <div class="mt-3 flex items-center justify-between">
+                    <span class="inline-flex items-center gap-1 text-xs font-medium ${improved ? 'text-hgf-green' : 'text-red-400'}">
+                        ${improved ? '↓' : '↑'} ${ropeRip.change}pp
+                        <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">pp = percentage points — absolute difference between two percentages.</span></span>
+                    </span>
+                    <span class="text-xs px-2 py-0.5 rounded-full ${improved ? 'bg-green-900 text-hgf-green border border-green-800' : 'bg-red-900 text-red-400 border border-red-900'}">
+                        ${improved ? 'Improved' : 'Worsened'}
+                    </span>
+                </div>
+            </div>
+            <div class="h-1 rounded-b-lg ${improved ? 'bg-hgf-green' : 'bg-red-500'}"></div>
+        `;
+        grid.appendChild(card);
+    }
+}
+
+function updateRopeRipBanner(ropeRip) {
+    const container = document.getElementById('rope-rip-banner-container');
+    if (!container) return;
+    if (!ropeRip) { container.innerHTML = ''; return; }
+    const improved = ropeRip.improved;
+    container.innerHTML = `
+        <div class="bg-hgf-panel border border-hgf-border ${improved ? 'border-l-4 border-l-hgf-green' : 'border-l-4 border-l-red-500'} rounded-lg p-4 mb-4 flex items-center justify-between">
+            <div>
+                <div class="text-xs text-hgf-muted uppercase tracking-widest mb-1">Rope rip rate (feeding_cnt)</div>
+                <div class="text-sm text-hgf-text">
+                    Period A: <span class="text-red-400 font-medium">${ropeRip.p1_rate}%</span>
+                    &nbsp;→&nbsp;
+                    Period B: <span class="${improved ? 'text-hgf-green' : 'text-red-400'} font-medium">${ropeRip.p2_rate}%</span>
+                    &nbsp;·&nbsp;
+                    <span class="inline-flex items-center gap-1 ${improved ? 'text-hgf-green' : 'text-red-400'}">${ropeRip.change}pp <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">pp = percentage points — absolute difference between two percentages.</span></span></span>
+                    &nbsp;·&nbsp;
+                    <span class="text-hgf-muted">${ropeRip.p1_cycles} / ${ropeRip.p2_cycles} cycles</span>
+                </div>
+            </div>
+            <span class="text-xs px-3 py-1.5 rounded-lg ${improved ? 'bg-green-900 text-green-300 border border-green-700' : 'bg-red-900 text-red-300 border border-red-700'}">
+                ${improved ? 'Improved' : 'Worsened'}
+            </span>
+        </div>
+    `;
+}
+
+function selectAllOrders() {
+    document.querySelectorAll('[data-group="ao_nr"]').forEach(btn => {
+        if (btn.style.display !== 'none') {
+            btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+            btn.classList.remove('border-hgf-border', 'text-hgf-text');
+        }
+    });
+    updateHiddenInputs('ao_nr');
+    fetchDateRange();
+    updateSummaryBar();
+}
+
+function clearOrders() {
+    document.querySelectorAll('[data-group="ao_nr"]').forEach(btn => {
+        btn.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        btn.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    updateHiddenInputs('ao_nr');
+    fetchDateRange();
+    updateSummaryBar();
+}
+
+function updateSummaryBar() {
+    const products = getSelectedChips('art_nr');
+    const orders = getSelectedChips('ao_nr');
+    const cleaningBtn = document.querySelector('.cleaning-chip.border-hgf-blue');
+    const prodEl = document.getElementById('summary-product');
+    const ordEl = document.getElementById('summary-orders');
+    const cleanEl = document.getElementById('summary-cleaning');
+    if (prodEl) prodEl.textContent = products.length > 0 ? products.join(', ') : 'None selected';
+    if (ordEl) ordEl.textContent = orders.length > 0 ? `${orders.length} selected` : 'None selected';
+    if (cleanEl) cleanEl.textContent = cleaningBtn ? cleaningBtn.textContent.trim() : 'Per tool top 5%';
+}
+
+function handleRunSubmit(form) {
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Running…';
+        btn.classList.add('opacity-60', 'cursor-not-allowed');
+    }
+}
+
+function showEditForm() {
+    const formSection = document.getElementById('compare-form-section');
+    const collapsedBar = document.getElementById('collapsed-bar');
+    formSection.style.display = 'block';
+    formSection.classList.remove('card-enter');
+    void formSection.offsetWidth;
+    formSection.classList.add('card-enter');
+    collapsedBar.style.display = 'none';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateHiddenInputs('art_nr');
+    updateHiddenInputs('ao_nr');
+    setupDateListeners();
+    fetchDateRange();
+    updateSummaryBar();
+
+    const keepRopeRipCheckbox = document.getElementById('keep-rope-rip');
+    if (keepRopeRipCheckbox) {
+        keepRopeRipCheckbox.addEventListener('change', function() {
+            if (excludedCyclesList.length > 0) recalculate();
+        });
+    }
+});
+
+</script>
+{% endblock %}

@@ -1,0 +1,62 @@
+PDCA Analysis App
+=======================
+
+What is this?
+-------------
+A tool for comparing injection moulding cycle data between two time periods
+or two different tools. Upload production data, select a period or tool to
+compare, and the app calculates whether cycle times and quality metrics
+improved or worsened. Results can be saved as experiments and printed as PDF.
+
+
+FIRST-TIME SETUP (do this once per computer)
+--------------------------------------------
+1. Install Python 3.10 or newer:
+   https://www.python.org/downloads/
+   IMPORTANT: during installation, check the box "Add Python to PATH"
+
+2. Double-click install.bat
+   This sets up the app and takes 1-2 minutes. You only need to do this once.
+
+
+STARTING THE APP (do this every time)
+--------------------------------------
+Double-click start.bat
+
+The app will open in your browser automatically.
+Keep the black console window open while using the app — closing it stops the server.
+When you are done, close the browser and then close the console window.
+
+
+BASIC USAGE
+-----------
+1. Load data       — Upload a CSV or Excel file exported from the machine
+2. Compare periods — Pick a baseline period (before a change) and a test period (after)
+                     Select metrics and click Compare
+3. Save experiment — Give it a name and save the result to track your PDCA cycle
+4. View history    — Open "View experiments" on the dashboard to revisit past results
+5. Print / PDF     — Open a saved experiment and click "Print / PDF" to export a report
+
+
+TROUBLESHOOTING
+---------------
+"Python not found" during install.bat
+  → Python is not installed, or was installed without "Add to PATH".
+    Re-install Python and check the PATH option.
+
+"Port already in use" when starting
+  → Another instance of the app is already running.
+    Check the taskbar for a black console window and close it first.
+
+The browser opens but shows an error page
+  → Wait 2-3 seconds and refresh. The server may still be starting up.
+
+The app is slow on first load
+  → Normal — Python starts up in the background. It is faster after the first page.
+
+
+DATA & PRIVACY
+--------------
+All data stays on this computer. Nothing is sent to the internet.
+Experiment results are stored in db.sqlite3 in the app folder.
+To back up your experiment history, copy that file to a safe location.

@@ -1,0 +1,181 @@
+{% load analysis_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ experiment.name }} — PDCA</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #111; background: #fff; padding: 32px; }
+        h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+        .subtitle { color: #666; font-size: 12px; margin-bottom: 24px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 16px; }
+        .header-brand { font-size: 18px; font-weight: 700; letter-spacing: 0.15em; color: #1e3a5f; }
+        .header-brand span { color: #888; }
+        .section-title { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #888; margin-bottom: 8px; }
+        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px; margin-bottom: 24px; }
+        .meta-item { display: flex; gap: 8px; }
+        .meta-label { color: #888; min-width: 100px; }
+        .meta-value { font-weight: 500; }
+        .periods { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+        .period-box { border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; }
+        .period-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+        .period-label.a { color: #2e7ebb; }
+        .period-label.b { color: #4caf7d; }
+        .period-date { font-size: 14px; font-weight: 500; }
+        .period-cycles { font-size: 11px; color: #888; margin-top: 2px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+        th { text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #888; border-bottom: 2px solid #e5e7eb; padding: 8px 12px; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        .metric-name { font-weight: 500; }
+        .avg-a { color: #2e7ebb; font-weight: 500; }
+        .avg-b { font-weight: 500; }
+        .avg-b.improved { color: #4caf7d; }
+        .avg-b.worsened { color: #e05c5c; }
+        .change { font-weight: 600; }
+        .change.improved { color: #4caf7d; }
+        .change.worsened { color: #e05c5c; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; }
+        .badge.improved { background: #dcfce7; color: #166534; }
+        .badge.worsened { background: #fee2e2; color: #991b1b; }
+        .verdict-box { border-left: 4px solid #4caf7d; background: #f0fdf4; padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 24px; }
+        .verdict-box.worsened { border-color: #e05c5c; background: #fef2f2; }
+        .verdict-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+        .verdict-text { font-weight: 500; }
+        .notes-box { border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin-bottom: 24px; }
+        .notes-text { color: #444; line-height: 1.5; white-space: pre-wrap; }
+        .print-btn { position: fixed; top: 20px; right: 20px; background: #2e7ebb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+        .print-btn:hover { background: #2566a0; }
+        .chart-section { margin-bottom: 24px; }
+        .chart-section .js-plotly-plot, .chart-section .plotly-graph-div { width: 100% !important; }
+        .chart-snapshot { width: 100%; max-height: 380px; object-fit: contain; display: block; }
+        @media print {
+            .print-btn { display: none; }
+            body { padding: 16px; }
+            .chart-section { page-break-inside: avoid; }
+        }
+        @page { margin: 16mm; }
+    </style>
+</head>
+<body>
+
+<button class="print-btn" onclick="printWithChart()">Print / Save as PDF</button>
+
+<div class="header">
+    <div>
+        <div class="header-brand">H<span>|</span>G<span>|</span>F — PDCA Analysis</div>
+        <div class="subtitle">Experiment report · Printed {{ experiment.created_at|date:"Y-m-d" }}</div>
+    </div>
+    <div style="text-align:right;">
+        <h1>{{ experiment.name }}</h1>
+        <div class="subtitle">Saved {{ experiment.created_at|date:"Y-m-d H:i" }}</div>
+    </div>
+</div>
+
+{% if experiment.verdict %}
+<div class="verdict-box {% if 'improved' not in experiment.verdict %}worsened{% endif %}">
+    <div class="verdict-label">Verdict</div>
+    <div class="verdict-text">{{ experiment.verdict }}</div>
+</div>
+{% endif %}
+
+<div class="section-title">Experiment configuration</div>
+<div class="meta-grid">
+    <div class="meta-item"><span class="meta-label">Type</span><span class="meta-value">{% if experiment.comparison_type == 'tool' %}Tool comparison{% else %}Period comparison{% endif %}</span></div>
+    <div class="meta-item"><span class="meta-label">Cleaning</span><span class="meta-value">{{ experiment.cleaning_method|cleaning_label }}</span></div>
+    {% if experiment.selected_art_nr %}
+    <div class="meta-item"><span class="meta-label">Tool(s)</span><span class="meta-value">{{ experiment.selected_art_nr|join:", " }}</span></div>
+    {% endif %}
+    {% if experiment.selected_ao_nr %}
+    <div class="meta-item"><span class="meta-label">Order(s)</span><span class="meta-value">{{ experiment.selected_ao_nr|join:", " }}</span></div>
+    {% endif %}
+</div>
+
+<div class="periods">
+    {% if experiment.comparison_type == 'tool' %}
+    <div class="period-box">
+        <div class="period-label a">Tool A</div>
+        <div class="period-date">{{ experiment.selected_art_nr.0 }}</div>
+        <div class="period-cycles">{{ experiment.p1_rows }} cycles · {{ experiment.period_1_start|date:"M j" }} – {{ experiment.period_1_end|date:"M j, Y" }}</div>
+    </div>
+    <div class="period-box">
+        <div class="period-label b">Tool B</div>
+        <div class="period-date">{{ experiment.tool_b }}</div>
+        <div class="period-cycles">{{ experiment.p2_rows }} cycles · {{ experiment.period_1_start|date:"M j" }} – {{ experiment.period_1_end|date:"M j, Y" }}</div>
+    </div>
+    {% else %}
+    <div class="period-box">
+        <div class="period-label a">Period A (baseline)</div>
+        <div class="period-date">{{ experiment.period_1_start|date:"M j" }} – {{ experiment.period_1_end|date:"M j, Y" }}</div>
+        <div class="period-cycles">{{ experiment.p1_rows }} cycles</div>
+    </div>
+    <div class="period-box">
+        <div class="period-label b">Period B (comparison)</div>
+        <div class="period-date">{{ experiment.period_2_start|date:"M j" }} – {{ experiment.period_2_end|date:"M j, Y" }}</div>
+        <div class="period-cycles">{{ experiment.p2_rows }} cycles</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="section-title">Results</div>
+<table>
+    <thead>
+        <tr>
+            <th>Metric</th>
+            <th>{% if experiment.comparison_type == 'tool' %}Tool A avg{% else %}Period A avg{% endif %}</th>
+            <th>{% if experiment.comparison_type == 'tool' %}Tool B avg{% else %}Period B avg{% endif %}</th>
+            <th>Change</th>
+            <th>Verdict</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in experiment.results %}
+        <tr>
+            <td class="metric-name">{{ row.metric }}</td>
+            <td class="avg-a">{{ row.period_1_avg|floatformat:1 }}s</td>
+            <td class="avg-b {% if row.pct_change < 0 %}improved{% else %}worsened{% endif %}">{{ row.period_2_avg|floatformat:1 }}s</td>
+            <td class="change {% if row.pct_change < 0 %}improved{% else %}worsened{% endif %}">{% if row.pct_change < 0 %}↓ {{ row.pct_change|floatformat:1|slice:"1:" }}%{% else %}↑ {{ row.pct_change|floatformat:1 }}%{% endif %}</td>
+            <td><span class="badge {% if row.pct_change < 0 %}improved{% else %}worsened{% endif %}">{% if row.pct_change < 0 %}Improved{% else %}Worsened{% endif %}</span></td>
+        </tr>
+        {% endfor %}
+        {% if experiment.rope_rip %}
+        <tr>
+            <td class="metric-name">Rope rip rate</td>
+            <td class="avg-a">{{ experiment.rope_rip.p1_rate }}%</td>
+            <td class="avg-b {% if experiment.rope_rip.improved %}improved{% else %}worsened{% endif %}">{{ experiment.rope_rip.p2_rate }}%</td>
+            <td class="change {% if experiment.rope_rip.improved %}improved{% else %}worsened{% endif %}">{% if experiment.rope_rip.improved %}↓ {{ experiment.rope_rip.change|stringformat:"g"|slice:"1:" }}pp{% else %}↑ {{ experiment.rope_rip.change }}pp{% endif %}</td>
+            <td><span class="badge {% if experiment.rope_rip.improved %}improved{% else %}worsened{% endif %}">{% if experiment.rope_rip.improved %}Improved{% else %}Worsened{% endif %}</span></td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{% if bar_chart_img %}
+<div class="section-title">Summary chart</div>
+<div class="chart-section">
+    <img src="{{ bar_chart_img }}" style="width:100%;display:block;max-height:420px;object-fit:contain;" />
+</div>
+{% endif %}
+
+{% for metric, scatter_img in scatter_charts %}
+<div class="section-title">{{ metric }} — cycle scatter</div>
+<div class="chart-section">
+    <img src="{{ scatter_img }}" style="width:100%;display:block;max-height:460px;object-fit:contain;" />
+</div>
+{% endfor %}
+
+{% if experiment.notes %}
+<div class="section-title">Notes</div>
+<div class="notes-box">
+    <div class="notes-text">{{ experiment.notes }}</div>
+</div>
+{% endif %}
+
+<script>
+function printWithChart() { window.print(); }
+</script>
+
+</body>
+</html>

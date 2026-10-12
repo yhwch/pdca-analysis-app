@@ -1,0 +1,675 @@
+{% extends 'analysis/base.html' %}
+{% load analysis_filters %}
+
+{% block title %}PDCA App - Compare tools{% endblock %}
+{% block page_title %}Compare tools{% endblock %}
+{% block page_subtitle %}Select two tools and a shared date range{% endblock %}
+{% block dataset_name %}{% if file_name %}{{ file_name }}{% else %}No data loaded{% endif %}{% endblock %}
+
+{% block topbar_actions %}
+    <a href="/upload/" class="bg-hgf-panel border border-hgf-border text-hgf-text text-sm px-4 py-2 rounded-lg hover:border-hgf-blue transition">
+        Upload new file
+    </a>
+{% endblock %}
+
+{% block content %}
+
+{% if no_data %}
+    <div class="p-4 bg-red-900 border border-red-700 rounded-lg text-red-200 text-sm">
+        No data loaded. <a href="/upload/" class="underline">Upload a file first.</a>
+    </div>
+{% else %}
+
+<div class="inline-flex gap-1 bg-hgf-darker border border-hgf-border p-1 rounded-lg mb-5">
+    <a href="/compare/" class="text-xs px-4 py-1.5 rounded-md text-hgf-text hover:text-white hover:bg-hgf-panel transition">Compare periods</a>
+    <a href="/compare/tools/" class="text-xs px-4 py-1.5 rounded-md bg-hgf-blue text-white font-medium">Compare tools</a>
+</div>
+
+<div id="compare-form-section" {% if comparison %}style="display:none;"{% endif %}>
+<form method="post" id="compare-form" onsubmit="handleRunSubmit(this)">
+    {% csrf_token %}
+    <input type="hidden" name="date_column" value="{{ parsed_columns.0 }}">
+    {% for metric in created_metrics %}
+        <input type="hidden" name="metrics" value="{{ metric }}">
+    {% endfor %}
+    <input type="hidden" name="tool_a" id="tool_a_input" value="{{ tool_a }}">
+    <input type="hidden" name="tool_b" id="tool_b_input" value="{{ tool_b }}">
+    <div id="ao-nr-hidden"></div>
+    <input type="hidden" name="cleaning_method" id="cleaning_method_input" value="{{ cleaning_method|default:'per_product_top5' }}">
+
+    <div class="flex items-start gap-3 mb-4 flex-wrap">
+        <div class="flex items-center gap-1.5 text-xs text-hgf-muted pt-1.5 shrink-0">
+            Cleaning
+            <span class="help-tooltip">
+                <span class="help-icon">?</span>
+                <span class="help-text">Removes extreme outlier cycles before computing averages. Set this first — it affects date range stats and the final comparison. Per tool top 5% is recommended.</span>
+            </span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            {% for val, label in cleaning_choices %}
+                {% with val|cleaning_tooltip as tip %}
+                <button type="button" data-value="{{ val }}" onclick="selectCleaning(this)"
+                    class="cleaning-chip inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition
+                        {% if cleaning_method == val %}border-hgf-blue text-hgf-blue bg-blue-900 bg-opacity-20{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue hover:text-white{% endif %}">
+                    {{ label }}
+                    {% if tip %}<span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">{{ tip }}</span></span>{% endif %}
+                </button>
+                {% endwith %}
+            {% endfor %}
+        </div>
+    </div>
+    <div id="custom-threshold-wrap" style="display:{% if cleaning_method == 'custom' %}block{% else %}none{% endif %};" class="mb-4">
+        <div class="flex flex-col gap-2">
+            {% for metric in created_metrics %}
+            <div class="flex items-center gap-3">
+                <label class="text-xs text-hgf-muted w-40 shrink-0">{{ metric }}</label>
+                <input type="number" id="custom_threshold_{{ metric }}" name="custom_threshold_{{ metric }}"
+                    data-metric-threshold="{{ metric }}"
+                    placeholder="no limit"
+                    value="{{ custom_thresholds_dict|get_item:metric }}"
+                    class="w-44 bg-hgf-darker border border-hgf-border text-white text-sm rounded-lg px-3 py-2">
+            </div>
+            {% endfor %}
+        </div>
+        <div class="text-xs text-hgf-muted mt-2">Cycles above these values (in seconds) will be excluded.</div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-4 mb-4">
+
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest mb-3">Tools</div>
+            <div class="mb-4">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <div class="w-2 h-2 rounded-full bg-hgf-blue flex-shrink-0"></div>
+                    <div class="text-xs text-hgf-muted">Tool A</div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% for art in art_nr_options %}
+                        <button type="button" data-value="{{ art }}" data-group="tool_a" onclick="selectToolA(this)"
+                            class="chip-btn text-xs px-3 py-1.5 rounded-full border transition
+                                {% if art == tool_a %}border-hgf-blue text-white bg-hgf-blue{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue hover:text-white{% endif %}">
+                            {{ art }}
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+            <div>
+                <div class="flex items-center gap-1.5 mb-2">
+                    <div class="w-2 h-2 rounded-full bg-hgf-green flex-shrink-0"></div>
+                    <div class="text-xs text-hgf-muted">Tool B</div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% for art in art_nr_options %}
+                        <button type="button" data-value="{{ art }}" data-group="tool_b" onclick="selectToolB(this)"
+                            class="chip-btn text-xs px-3 py-1.5 rounded-full border transition
+                                {% if art == tool_b %}border-hgf-green text-white bg-hgf-green{% else %}border-hgf-border text-hgf-text hover:border-hgf-green hover:text-white{% endif %}">
+                            {{ art }}
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="text-xs text-hgf-muted uppercase tracking-widest" id="orders-label">Orders</div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="selectAllOrders()" class="text-xs text-hgf-blue hover:text-white transition">All</button>
+                    <button type="button" onclick="clearOrders()" class="text-xs text-hgf-muted hover:text-white transition">Clear</button>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-2 max-h-28 overflow-y-auto" id="ao-nr-chips">
+                {% for ao in ao_nr_options %}
+                    <button type="button" data-value="{{ ao }}" data-group="ao_nr" onclick="toggleAoChip(this)"
+                        class="chip-btn text-xs px-3 py-1.5 rounded-lg border transition
+                            {% if ao in selected_ao_nr %}border-hgf-blue text-hgf-blue bg-blue-900 bg-opacity-20{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue hover:text-white{% endif %}">
+                        {{ ao }}
+                    </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4">
+            <div class="text-xs text-hgf-muted uppercase tracking-widest mb-3">Date range</div>
+            <div class="text-lg font-medium text-white mb-0.5">
+                <span id="range-min">{{ available_min }}</span>
+                <span class="text-hgf-muted text-xs mx-1">to</span>
+                <span id="range-max">{{ available_max }}</span>
+            </div>
+            <div class="text-2xl font-medium text-hgf-blue mb-4" id="range-cycles-display">—</div>
+
+            <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                    <input type="date" id="date_start" name="date_start" value="{{ date_start }}"
+                        onchange="fetchDateRange()"
+                        class="flex-1 bg-hgf-darker border border-hgf-border text-white text-xs rounded-lg px-2 py-2 [color-scheme:dark]">
+                    <span class="text-hgf-muted text-xs flex-shrink-0">to</span>
+                    <input type="date" id="date_end" name="date_end" value="{{ date_end }}"
+                        onchange="fetchDateRange()"
+                        class="flex-1 bg-hgf-darker border border-hgf-border text-white text-xs rounded-lg px-2 py-2 [color-scheme:dark]">
+                </div>
+                <button type="button" onclick="fillFullRange()"
+                    class="w-full bg-hgf-darker border border-hgf-border text-hgf-muted text-xs rounded-lg px-3 py-2 hover:border-hgf-blue hover:text-white transition">
+                    Fill full range
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="bg-hgf-darker border border-hgf-border rounded-lg px-4 py-3 flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4 flex-wrap text-xs">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-hgf-blue"></div>
+                <span class="text-hgf-muted">Tool A:</span>
+                <span class="text-white" id="summary-tool-a">None</span>
+            </div>
+            <span class="text-hgf-border">|</span>
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-hgf-green"></div>
+                <span class="text-hgf-muted">Tool B:</span>
+                <span class="text-white" id="summary-tool-b">None</span>
+            </div>
+            <span class="text-hgf-border">|</span>
+            <div class="flex items-center gap-2">
+                <span class="text-hgf-muted">Orders:</span>
+                <span class="text-white" id="summary-orders">All</span>
+            </div>
+            <span class="text-hgf-border">|</span>
+            <div class="flex items-center gap-2">
+                <span class="text-hgf-muted">Cleaning:</span>
+                <span class="text-white" id="summary-cleaning">Per tool top 5%</span>
+            </div>
+        </div>
+        <button type="submit" class="bg-hgf-blue text-white text-sm px-6 py-2.5 rounded-lg hover:opacity-90 transition font-medium">
+            Run →
+        </button>
+    </div>
+
+</form>
+</div>
+
+{% if comparison %}
+<div id="collapsed-bar" class="bg-hgf-panel border border-hgf-border rounded-lg px-4 py-3 mb-4 flex items-center justify-between">
+    <div class="flex items-center gap-4 flex-wrap text-xs text-hgf-muted">
+        <span class="text-hgf-blue font-medium">Tool {{ tool_a }}</span>
+        <span class="text-hgf-border">vs</span>
+        <span class="text-hgf-green font-medium">Tool {{ tool_b }}</span>
+        <span class="text-hgf-border">|</span>
+        <span>{{ date_start }} – {{ date_end }}</span>
+        <span class="text-hgf-border">·</span>
+        <span><span class="text-hgf-blue">A</span> {{ p1_rows }} cycles · <span class="text-hgf-green">B</span> {{ p2_rows }} cycles</span>
+        <span class="text-hgf-border">|</span>
+        <span>{{ cleaning_method_key|cleaning_label }}</span>
+        {% if cycles_removed %}
+        <span class="text-hgf-border">|</span>
+        <span class="text-amber-400">{{ cycles_removed }} cycles removed</span>
+        {% endif %}
+    </div>
+    <div class="flex items-center gap-2">
+        {% if not saved %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="date_column" value="{{ date_column }}">
+                <input type="hidden" name="tool_a" value="{{ tool_a }}">
+                <input type="hidden" name="tool_b" value="{{ tool_b }}">
+                <input type="hidden" name="date_start" value="{{ date_start }}">
+                <input type="hidden" name="date_end" value="{{ date_end }}">
+                <input type="hidden" name="cleaning_method" value="{{ cleaning_method }}">
+                {% for metric, threshold in custom_thresholds_dict.items %}
+                <input type="hidden" name="custom_threshold_{{ metric }}" value="{{ threshold }}">
+                {% endfor %}
+                {% for m in selected_metrics %}<input type="hidden" name="metrics" value="{{ m }}">{% endfor %}
+                {% for a in selected_ao_nr %}<input type="hidden" name="ao_nr" value="{{ a }}">{% endfor %}
+                <input type="hidden" name="save_experiment" value="1">
+                <button type="submit" class="text-xs border border-hgf-green text-hgf-green px-3 py-1.5 rounded-lg hover:bg-hgf-green hover:text-white transition">
+                    Save experiment
+                </button>
+            </form>
+        {% else %}
+            <span class="text-xs text-hgf-green">✓ Saved</span>
+        {% endif %}
+        <button onclick="showEditForm()"
+            class="text-xs bg-hgf-panel border border-hgf-border text-hgf-text px-3 py-1.5 rounded-lg hover:border-hgf-blue transition">
+            Edit ↑
+        </button>
+    </div>
+</div>
+{% endif %}
+
+{% if saved %}
+    <div class="bg-green-900 border border-green-700 rounded-lg p-3 mb-4 text-green-300 text-sm">
+        ✓ Experiment saved. <a href="/experiments/" class="underline">View all experiments →</a>
+    </div>
+{% endif %}
+
+{% if comparison %}
+    <div class="grid grid-cols-4 gap-3 mb-4" id="metric-cards-grid">
+        {% for row in comparison %}
+            <div class="card-enter bg-hgf-panel border border-hgf-border rounded-lg">
+                <div class="p-4">
+                    <div class="flex items-center gap-1.5 text-xs text-hgf-muted uppercase tracking-widest mb-2">
+                        {{ row.metric }}
+                        {% with row.metric|metric_tooltip as tip %}{% if tip %}<span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">{{ tip }}</span></span>{% endif %}{% endwith %}
+                    </div>
+                    <div class="flex items-baseline gap-2 mb-1">
+                        <span class="text-lg font-medium text-hgf-blue">{{ row.period_1_avg|floatformat:1 }}s</span>
+                        <span class="text-hgf-border text-xs">→</span>
+                        <span class="text-lg font-medium {% if row.pct_change < 0 %}text-hgf-green{% else %}text-red-400{% endif %}">{{ row.period_2_avg|floatformat:1 }}s</span>
+                    </div>
+                    <div class="text-xs text-hgf-muted">{{ row.period_1_avg_fmt }} → {{ row.period_2_avg_fmt }}</div>
+                    <div class="mt-3 flex items-center justify-between">
+                        <span class="text-xs font-medium {% if row.pct_change < 0 %}text-hgf-green{% else %}text-red-400{% endif %}">
+                            {% if row.pct_change < 0 %}↓{% else %}↑{% endif %}
+                            {{ row.pct_change|floatformat:1 }}%
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-full {% if row.pct_change < 0 %}bg-green-900 bg-opacity-50 text-hgf-green border border-green-800{% else %}bg-red-900 bg-opacity-50 text-red-400 border border-red-900{% endif %}">
+                            {% if row.pct_change < 0 %}A faster{% else %}B faster{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="h-1 rounded-b-lg {% if row.pct_change < 0 %}bg-hgf-green{% else %}bg-red-500{% endif %}"></div>
+            </div>
+        {% endfor %}
+
+        {% if rope_rip %}
+            <div class="card-enter bg-hgf-panel border border-hgf-border rounded-lg">
+                <div class="p-4">
+                    <div class="flex items-center gap-1.5 text-xs text-hgf-muted uppercase tracking-widest mb-2">
+                        Rope rip rate
+                        <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Percentage of cycles where the rope feeding mechanism failed (Feeding_cnt = 1). Lower is better.</span></span>
+                    </div>
+                    <div class="flex items-baseline gap-2 mb-1">
+                        <span class="text-lg font-medium text-red-400">{{ rope_rip.p1_rate }}%</span>
+                        <span class="text-hgf-border text-xs">→</span>
+                        <span class="text-lg font-medium {% if rope_rip.improved %}text-hgf-green{% else %}text-red-400{% endif %}">{{ rope_rip.p2_rate }}%</span>
+                    </div>
+                    <div class="text-xs text-hgf-muted">{{ rope_rip.p1_cycles }} / {{ rope_rip.p2_cycles }} cycles</div>
+                    <div class="mt-3 flex items-center justify-between">
+                        <span class="inline-flex items-center gap-1 text-xs font-medium {% if rope_rip.improved %}text-hgf-green{% else %}text-red-400{% endif %}">
+                            {% if rope_rip.improved %}↓{% else %}↑{% endif %}
+                            {{ rope_rip.change }}pp
+                            <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">pp = percentage points.</span></span>
+                        </span>
+                        <span class="text-xs px-2 py-0.5 rounded-full {% if rope_rip.improved %}bg-green-900 bg-opacity-50 text-hgf-green border border-green-800{% else %}bg-red-900 bg-opacity-50 text-red-400 border border-red-900{% endif %}">
+                            {% if rope_rip.improved %}B better{% else %}A better{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="h-1 rounded-b-lg {% if rope_rip.improved %}bg-hgf-green{% else %}bg-red-500{% endif %}"></div>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="bg-hgf-panel border border-hgf-border rounded-lg p-4 mb-4">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex gap-2">
+                <button onclick="selectChartType('bar', this)" class="chart-type-btn active-chart flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-blue text-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="3" y="12" width="4" height="9" fill="currentColor" rx="1"/><rect x="10" y="7" width="4" height="14" fill="currentColor" rx="1"/><rect x="17" y="4" width="4" height="17" fill="currentColor" rx="1"/></svg>
+                    Bar
+                </button>
+                <button onclick="selectChartType('scatter', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="5" cy="18" r="2" fill="currentColor"/><circle cx="10" cy="12" r="2" fill="currentColor"/><circle cx="17" cy="7" r="2" fill="currentColor"/></svg>
+                    Scatter
+                </button>
+                <button onclick="selectChartType('line', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><polyline points="3,18 8,10 13,14 18,6 21,9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Line
+                </button>
+                <button onclick="selectChartType('violin', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3 C9 6 8 9 8 12 C8 15 9 18 12 21" stroke="#2e7ebb" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                        <path d="M12 3 C15 6 16 9 16 12 C16 15 15 18 12 21" stroke="#4caf7d" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+                    </svg>
+                    Violin
+                </button>
+                <button onclick="selectChartType('control', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <line x1="2" y1="5" x2="22" y2="5" stroke="#e05c5c" stroke-width="1" stroke-dasharray="2,2"/>
+                        <polyline points="2,12 5,11 8,13 11,10 14,12 17,9 20,11 22,11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <line x1="2" y1="19" x2="22" y2="19" stroke="#e05c5c" stroke-width="1" stroke-dasharray="2,2"/>
+                    </svg>
+                    Control
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">SPC control chart — UCL/LCL limits are set from Tool A (mean ± 3σ). Points marked × in Tool B fall outside Tool A's normal range.</span></span>
+                </button>
+                <button onclick="selectChartType('histogram', this)" class="chart-type-btn flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-hgf-border text-hgf-text hover:border-hgf-blue transition">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <rect x="2" y="14" width="5" height="8" fill="currentColor"/>
+                        <rect x="7" y="7" width="5" height="15" fill="currentColor"/>
+                        <rect x="12" y="10" width="5" height="12" fill="currentColor"/>
+                        <rect x="17" y="17" width="5" height="5" fill="currentColor"/>
+                    </svg>
+                    Histogram
+                    <span class="help-tooltip"><span class="help-icon">?</span><span class="help-text">Frequency distribution of cycle times — shows how many cycles fell at each value. Useful for spotting bimodal distributions or a full shift in the spread.</span></span>
+                </button>
+            </div>
+            <div id="metric-selector" class="flex gap-2" style="display:none;">
+                <span class="text-xs text-hgf-muted self-center">Metric:</span>
+                {% for metric in created_metrics %}
+                    <button onclick="selectMetric('{{ metric }}', this)" data-metric="{{ metric }}"
+                        class="metric-btn text-xs px-3 py-1.5 rounded-lg border transition
+                            {% if forloop.first %}border-hgf-blue text-hgf-blue bg-blue-900 bg-opacity-20{% else %}border-hgf-border text-hgf-text hover:border-hgf-blue{% endif %}">
+                        {{ metric }}
+                    </button>
+                {% endfor %}
+            </div>
+        </div>
+        <div id="compare-chart-container">
+            {{ chart_html|safe }}
+        </div>
+    </div>
+
+{% endif %}
+
+{% endif %}
+
+<!-- Floating order tooltip -->
+<div id="ao-tooltip" style="display:none;position:fixed;z-index:9999;pointer-events:none;"
+    class="bg-hgf-panel border border-hgf-border rounded-lg px-3 py-2.5 text-xs shadow-lg min-w-36">
+    <div id="ao-tooltip-order" class="text-hgf-muted mb-1.5"></div>
+    <div id="ao-tooltip-cycles" class="text-white font-medium mb-0.5"></div>
+    <div id="ao-tooltip-range" class="text-hgf-muted"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+<script>
+let currentChartType = 'bar';
+let currentMetric = '{{ created_metrics.0 }}';
+let selectedToolA = '{{ tool_a }}';
+let selectedToolB = '{{ tool_b }}';
+const AO_STATS = {{ ao_nr_stats_json|safe }};
+
+(function setupOrderTooltips() {
+    const tip      = document.getElementById('ao-tooltip');
+    const tipOrder = document.getElementById('ao-tooltip-order');
+    const tipCyc   = document.getElementById('ao-tooltip-cycles');
+    const tipRange = document.getElementById('ao-tooltip-range');
+    if (!tip) return;
+    function show(btn) {
+        const ao = btn.dataset.value;
+        const s  = AO_STATS[ao];
+        if (!s) return;
+        tipOrder.textContent = `Order ${ao}`;
+        tipCyc.textContent   = `${s.cycles.toLocaleString()} cycles`;
+        tipRange.textContent = s.from && s.to ? `${s.from} → ${s.to}` : '';
+        tip.style.display = 'block';
+        reposition(btn);
+    }
+    function reposition(btn) {
+        const r   = btn.getBoundingClientRect();
+        const tw  = tip.offsetWidth  || 160;
+        const th  = tip.offsetHeight || 70;
+        let left  = r.left;
+        let top   = r.top - th - 8;
+        if (top < 8) top = r.bottom + 8;
+        if (left + tw > window.innerWidth - 8) left = window.innerWidth - tw - 8;
+        tip.style.left = left + 'px';
+        tip.style.top  = top  + 'px';
+    }
+    function hide() { tip.style.display = 'none'; }
+    function attach() {
+        document.querySelectorAll('[data-group="ao_nr"]').forEach(btn => {
+            btn.addEventListener('mouseenter', () => show(btn));
+            btn.addEventListener('mouseleave', hide);
+        });
+    }
+    document.addEventListener('DOMContentLoaded', attach);
+})();
+
+function selectToolA(btn) {
+    const val = btn.dataset.value;
+    document.querySelectorAll('[data-group="tool_a"]').forEach(b => {
+        b.classList.remove('border-hgf-blue', 'text-white', 'bg-hgf-blue');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    if (val === selectedToolA) {
+        selectedToolA = '';
+    } else {
+        selectedToolA = val;
+        btn.classList.add('border-hgf-blue', 'text-white', 'bg-hgf-blue');
+        btn.classList.remove('border-hgf-border', 'text-hgf-text');
+        // Deselect from B if same
+        if (selectedToolA === selectedToolB) {
+            selectedToolB = '';
+            document.querySelectorAll('[data-group="tool_b"]').forEach(b => {
+                b.classList.remove('border-hgf-green', 'text-white', 'bg-hgf-green');
+                b.classList.add('border-hgf-border', 'text-hgf-text');
+            });
+            document.getElementById('tool_b_input').value = '';
+        }
+    }
+    document.getElementById('tool_a_input').value = selectedToolA;
+    fetchDateRange();
+    updateSummaryBar();
+}
+
+function selectToolB(btn) {
+    const val = btn.dataset.value;
+    document.querySelectorAll('[data-group="tool_b"]').forEach(b => {
+        b.classList.remove('border-hgf-green', 'text-white', 'bg-hgf-green');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    if (val === selectedToolB) {
+        selectedToolB = '';
+    } else {
+        selectedToolB = val;
+        btn.classList.add('border-hgf-green', 'text-white', 'bg-hgf-green');
+        btn.classList.remove('border-hgf-border', 'text-hgf-text');
+        // Deselect from A if same
+        if (selectedToolB === selectedToolA) {
+            selectedToolA = '';
+            document.querySelectorAll('[data-group="tool_a"]').forEach(b => {
+                b.classList.remove('border-hgf-blue', 'text-white', 'bg-hgf-blue');
+                b.classList.add('border-hgf-border', 'text-hgf-text');
+            });
+            document.getElementById('tool_a_input').value = '';
+        }
+    }
+    document.getElementById('tool_b_input').value = selectedToolB;
+    fetchDateRange();
+    updateSummaryBar();
+}
+
+function toggleAoChip(btn) {
+    const isActive = btn.classList.contains('border-hgf-blue');
+    if (isActive) {
+        btn.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        btn.classList.add('border-hgf-border', 'text-hgf-text');
+    } else {
+        btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    }
+    updateHiddenAoNr();
+    fetchDateRange();
+    updateSummaryBar();
+}
+
+function selectAllOrders() {
+    document.querySelectorAll('[data-group="ao_nr"]').forEach(btn => {
+        if (btn.style.display !== 'none') {
+            btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+            btn.classList.remove('border-hgf-border', 'text-hgf-text');
+        }
+    });
+    updateHiddenAoNr();
+    fetchDateRange();
+    updateSummaryBar();
+}
+
+function clearOrders() {
+    document.querySelectorAll('[data-group="ao_nr"]').forEach(btn => {
+        btn.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        btn.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    updateHiddenAoNr();
+    fetchDateRange();
+    updateSummaryBar();
+}
+
+function updateHiddenAoNr() {
+    const container = document.getElementById('ao-nr-hidden');
+    container.innerHTML = '';
+    document.querySelectorAll('[data-group="ao_nr"].border-hgf-blue').forEach(btn => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'ao_nr';
+        input.value = btn.dataset.value;
+        container.appendChild(input);
+    });
+}
+
+function getSelectedAoNr() {
+    return Array.from(document.querySelectorAll('[data-group="ao_nr"].border-hgf-blue')).map(b => b.dataset.value);
+}
+
+function getCleaningParam() {
+    const input = document.getElementById('cleaning_method_input');
+    let val = input ? input.value : '{{ cleaning_method }}';
+    if (val === 'custom') {
+        const parts = [];
+        document.querySelectorAll('[data-metric-threshold]').forEach(el => {
+            const t = el.value.trim();
+            if (t) parts.push(`${el.dataset.metricThreshold}:${t}`);
+        });
+        val = parts.length ? `custom_${parts.join(',')}` : 'none';
+    }
+    return val;
+}
+
+function fetchDateRange() {
+    const params = new URLSearchParams();
+    if (selectedToolA) params.append('art_nr', selectedToolA);
+    if (selectedToolB) params.append('art_nr', selectedToolB);
+    getSelectedAoNr().forEach(v => params.append('ao_nr', v));
+    params.append('cleaning_method', getCleaningParam());
+    fetch(`/api/date-range/?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+            const rangeMin = document.getElementById('range-min');
+            const rangeMax = document.getElementById('range-max');
+            const rangeCycles = document.getElementById('range-cycles-display');
+            if (rangeMin && data.available_min) rangeMin.textContent = data.available_min;
+            if (rangeMax && data.available_max) rangeMax.textContent = data.available_max;
+            if (rangeCycles) rangeCycles.textContent = data.total_cycles ? data.total_cycles.toLocaleString() : '—';
+        });
+}
+
+function fillFullRange() {
+    const min = document.getElementById('range-min').textContent.trim();
+    const max = document.getElementById('range-max').textContent.trim();
+    if (!min || !max || min === '—' || max === '—') return;
+    document.getElementById('date_start').value = min;
+    document.getElementById('date_end').value = max;
+}
+
+function selectCleaning(btn) {
+    document.querySelectorAll('.cleaning-chip').forEach(c => {
+        c.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        c.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+    btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    document.getElementById('cleaning_method_input').value = btn.dataset.value;
+    document.getElementById('custom-threshold-wrap').style.display = btn.dataset.value === 'custom' ? 'block' : 'none';
+    updateSummaryBar();
+    fetchDateRange();
+}
+
+function updateSummaryBar() {
+    const aoNr = getSelectedAoNr();
+    const cleaningBtn = document.querySelector('.cleaning-chip.border-hgf-blue');
+    const taEl = document.getElementById('summary-tool-a');
+    const tbEl = document.getElementById('summary-tool-b');
+    const ordEl = document.getElementById('summary-orders');
+    const cleanEl = document.getElementById('summary-cleaning');
+    if (taEl) taEl.textContent = selectedToolA || 'None';
+    if (tbEl) tbEl.textContent = selectedToolB || 'None';
+    if (ordEl) ordEl.textContent = aoNr.length > 0 ? `${aoNr.length} selected` : 'All';
+    if (cleanEl) cleanEl.textContent = cleaningBtn ? cleaningBtn.textContent.trim() : 'Per tool top 5%';
+}
+
+function buildBaseParams() {
+    const params = new URLSearchParams();
+    params.append('tool_a', '{{ tool_a }}');
+    params.append('tool_b', '{{ tool_b }}');
+    params.append('date_start', '{{ date_start }}');
+    params.append('date_end', '{{ date_end }}');
+    params.append('cleaning_method', getCleaningParam());
+    {% for a in selected_ao_nr %}params.append('ao_nr', '{{ a }}');
+    {% endfor %}
+    {% for m in selected_metrics %}params.append('metrics', '{{ m }}');
+    {% endfor %}
+    return params.toString();
+}
+
+function selectChartType(type, btn) {
+    currentChartType = type;
+    document.querySelectorAll('.chart-type-btn').forEach(b => {
+        b.classList.remove('border-hgf-blue', 'text-hgf-blue');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    btn.classList.add('border-hgf-blue', 'text-hgf-blue');
+    btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    const metricSelector = document.getElementById('metric-selector');
+    if (metricSelector) metricSelector.style.display = type === 'bar' ? 'none' : 'flex';
+    loadChart();
+}
+
+function selectMetric(metric, btn) {
+    currentMetric = metric;
+    document.querySelectorAll('.metric-btn').forEach(b => {
+        b.classList.remove('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+        b.classList.add('border-hgf-border', 'text-hgf-text');
+    });
+    btn.classList.add('border-hgf-blue', 'text-hgf-blue', 'bg-blue-900', 'bg-opacity-20');
+    btn.classList.remove('border-hgf-border', 'text-hgf-text');
+    loadChart();
+}
+
+function loadChart() {
+    const container = document.getElementById('compare-chart-container');
+    if (!container) return;
+    container.innerHTML = '<div class="flex items-center justify-center p-10"><div class="spinner"></div></div>';
+    const url = `/compare/tools/chart/?chart_type=${currentChartType}&metric=${currentMetric}&${buildBaseParams()}`;
+    fetch(url)
+        .then(r => r.text())
+        .then(html => {
+            container.innerHTML = html;
+            container.querySelectorAll('script').forEach(oldScript => {
+                const newScript = document.createElement('script');
+                Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+                newScript.textContent = oldScript.textContent;
+                oldScript.replaceWith(newScript);
+            });
+        });
+}
+
+function handleRunSubmit(form) {
+    const btn = form.querySelector('button[type="submit"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Running…';
+        btn.classList.add('opacity-60', 'cursor-not-allowed');
+    }
+}
+
+function showEditForm() {
+    const formSection = document.getElementById('compare-form-section');
+    const collapsedBar = document.getElementById('collapsed-bar');
+    formSection.style.display = 'block';
+    formSection.classList.remove('card-enter');
+    void formSection.offsetWidth;
+    formSection.classList.add('card-enter');
+    collapsedBar.style.display = 'none';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateHiddenAoNr();
+    fetchDateRange();
+    updateSummaryBar();
+});
+</script>
+{% endblock %}
